@@ -8,6 +8,6 @@
 | [0004 Local image view and telemetry layout](0004-local-image-view.md) | Move local ZMQ/SHM camera display into Bullet View with MAVLink bbox overlays and reorganized telemetry instruments. | Pending | Pending |
 | [0005 Lower telemetry split](0005-lower-telemetry-split.md) | Split the lower Telemetry area into an R/P/Y summary and a status-message panel. | Pending | Pending |
 | [0006 Bullet View AGL gauge](0006-agl-gauge.md) | Display standard MAVLink rangefinder AGL telemetry in the Telemetry tab. | Implemented; focused tests passed | `0493860` |
-| [0007 Runtime parameters](0007-runtime-parameters.md) | MAVLink parameter UI, live tuning and remote update logs. | Implemented; tests passed | Pending |
-| [0008 Log controls](0008-log-controls.md) | Clear local log and explicitly control auto-scroll. | Implemented; 23 tests passed | Pending |
-| [0009 Status time and frame](0009-status-time-frame.md) | Show simulation seconds and camera sequence in status logs. | Implemented; 361 tests passed | Pending |
+| [0007 Runtime parameters](0007-runtime-parameters.md) | MAVLink parameter UI, live tuning and remote update logs. | Implemented; tests passed | `dd84b1a47ca5f5800f8a513dd04ca180f659289b` |
+| [0008 Log controls](0008-log-controls.md) | Clear local log and explicitly control auto-scroll. | Implemented; 23 tests passed | `dd84b1a47ca5f5800f8a513dd04ca180f659289b` |
+| [0009 Status time and frame](0009-status-time-frame.md) | Show simulation seconds and camera sequence in status logs. | Implemented; 361 tests passed | `dd84b1a47ca5f5800f8a513dd04ca180f659289b` |

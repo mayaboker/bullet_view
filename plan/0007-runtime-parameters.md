@@ -22,7 +22,11 @@ and wheels. No active flight configuration was changed; no commits or pushes.
 Live yaw, azimuth and elevation gains only; COMMIT rejects edits; other changes require stopped mission. No firmware bridge, import, automatic reconnect, remote persistence, commits or pushes.
 
 ## Status
-Implemented; verification passed (not committed)
+Implemented; verification passed
 
 ## Implementation commit
-Pending
+`dd84b1a47ca5f5800f8a513dd04ca180f659289b`
+
+## Repository snapshot record
+Recorded snapshot: `dd84b1a47ca5f5800f8a513dd04ca180f659289b` (bullet_view repository). This is the new local
+baseline containing the current implementation, not a recovered historical commit.
