@@ -1,0 +1,453 @@
+"""FlightLens-themed PySide6 view for Bullet telemetry."""
+from math import degrees, radians, sin, cos
+
+from PySide6 import QtCore, QtGui, QtWidgets
+from bullet_msgs.status_messages import (MAV_SEVERITY_ERROR, MAV_SEVERITY_INFO, MAV_SEVERITY_WARNING,
+                                         STATUS_MESSAGE_BY_INDEX)
+
+from .model import Bbox, ImageFrame, TelemetrySnapshot
+from .parameter_view import ParameterPanel
+
+
+WINDOW_WIDTH = 1360
+WINDOW_HEIGHT = 720
+MESSAGE_DETAILS_PLACEHOLDER = 'Select a message to inspect its description.'
+PITCH_PIXELS_PER_RAD = 85.
+MAX_ALTITUDE_M = 100.
+MAX_VERTICAL_SPEED_M_S = 5.
+MAX_RANGEFINDER_M = 50.
+PITCH_MARK_DEGREES = (-30, -20, -10, 10, 20, 30)
+ROLL_MARK_DEGREES = (-60, -45, -30, -20, -10, 10, 20, 30, 45, 60)
+
+
+SEVERITY_COLORS = {
+    MAV_SEVERITY_INFO: '#d9e6f4',
+    MAV_SEVERITY_WARNING: '#eab85a',
+    MAV_SEVERITY_ERROR: '#ef6b73',
+    2: '#ff5b7f',
+}
+
+
+class FlightBall(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.attitude = None
+        self.setMinimumSize(360, 360)
+        self.setAccessibleName('Flight attitude ball')
+
+    def set_attitude(self, attitude):
+        self.attitude = attitude
+        self.update()
+
+    def paintEvent(self, event):
+        del event
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        size = min(self.width(), self.height()) - 28
+        radius = size / 2
+        center = QtCore.QPointF(self.width() / 2, self.height() / 2)
+        painter.setPen(QtGui.QPen(QtGui.QColor('#70d6ad'), 3))
+        painter.setBrush(QtGui.QColor('#101c2a'))
+        painter.drawEllipse(center, radius, radius)
+        painter.save()
+        clip = QtGui.QPainterPath()
+        clip.addEllipse(center, radius - 2, radius - 2)
+        painter.setClipPath(clip)
+        roll = 0. if self.attitude is None else degrees(self.attitude.roll_rad)
+        pitch = 0. if self.attitude is None else self.attitude.pitch_rad * PITCH_PIXELS_PER_RAD
+        painter.translate(center)
+        painter.rotate(-roll)
+        painter.translate(0, pitch)
+        painter.fillRect(QtCore.QRectF(-radius * 2, -radius * 2, radius * 4, radius * 2), QtGui.QColor('#284c68'))
+        painter.fillRect(QtCore.QRectF(-radius * 2, 0, radius * 4, radius * 2), QtGui.QColor('#9b694e'))
+        painter.setPen(QtGui.QPen(QtGui.QColor('#d9e6f4'), 2))
+        painter.drawLine(QtCore.QPointF(-radius * 2, 0), QtCore.QPointF(radius * 2, 0))
+        painter.setFont(QtGui.QFont('sans-serif', 9, QtGui.QFont.Weight.Bold))
+        for pitch_degrees in PITCH_MARK_DEGREES:
+            y = radians(pitch_degrees) * PITCH_PIXELS_PER_RAD
+            width = radius * (.42 if abs(pitch_degrees) == 30 else .3)
+            painter.drawLine(QtCore.QPointF(-width, y), QtCore.QPointF(width, y))
+            painter.drawText(QtCore.QPointF(width + 5, y + 4), f'{abs(pitch_degrees)}°')
+        painter.restore()
+        painter.setPen(QtGui.QPen(QtGui.QColor('#eab85a'), 3))
+        painter.drawLine(center + QtCore.QPointF(-radius * .42, 0), center + QtCore.QPointF(-radius * .12, 0))
+        painter.drawLine(center + QtCore.QPointF(radius * .12, 0), center + QtCore.QPointF(radius * .42, 0))
+        painter.setPen(QtGui.QPen(QtGui.QColor('#d9e6f4'), 2))
+        painter.setFont(QtGui.QFont('sans-serif', 8, QtGui.QFont.Weight.Bold))
+        for roll_degrees in ROLL_MARK_DEGREES:
+            angle = radians(roll_degrees)
+            inner = radius - 10
+            outer = radius - 2
+            start = center + QtCore.QPointF(sin(angle) * inner, -cos(angle) * inner)
+            end = center + QtCore.QPointF(sin(angle) * outer, -cos(angle) * outer)
+            painter.drawLine(start, end)
+            if abs(roll_degrees) in (30, 60):
+                label_radius = radius - 25
+                label = center + QtCore.QPointF(sin(angle) * label_radius, -cos(angle) * label_radius)
+                painter.drawText(QtCore.QRectF(label.x() - 12, label.y() - 8, 24, 16),
+                                 QtCore.Qt.AlignmentFlag.AlignCenter, f'{abs(roll_degrees)}°')
+        painter.end()
+
+
+class AltitudeWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.altitude_m = None
+        self.setMinimumSize(220, 360)
+        self.setAccessibleName('Altitude gauge')
+
+    def set_altitude(self, altitude):
+        self.altitude_m = None if altitude is None else altitude.local_m
+        self.update()
+
+    def paintEvent(self, event):
+        del event
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setPen(QtGui.QPen(QtGui.QColor('#30485f'), 1))
+        painter.setBrush(QtGui.QColor('#101c2a'))
+        painter.drawRoundedRect(self.rect().adjusted(8, 8, -8, -8), 8, 8)
+        painter.setPen(QtGui.QColor('#d9e6f4'))
+        painter.setFont(QtGui.QFont('sans-serif', 15, QtGui.QFont.Weight.Bold))
+        text = 'Unavailable' if self.altitude_m is None else f'{self.altitude_m:.2f} m'
+        painter.drawText(self.rect().adjusted(20, 24, -20, -20), QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignHCenter, text)
+        top, bottom = 86, self.height() - 28
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QColor('#203950'))
+        painter.drawRoundedRect(self.width() / 2 - 18, top, 36, bottom - top, 8, 8)
+        if self.altitude_m is not None:
+            fraction = max(0., min(1., self.altitude_m / MAX_ALTITUDE_M))
+            painter.setBrush(QtGui.QColor('#58b8f5'))
+            height = (bottom - top) * fraction
+            painter.drawRoundedRect(self.width() / 2 - 18, bottom - height, 36, height, 8, 8)
+        painter.end()
+
+
+class VerticalSpeedWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.vertical_speed_m_s = None
+        self.setMinimumSize(150, 360)
+        self.setAccessibleName('Vertical speed gauge')
+
+    def set_vertical_speed(self, vertical_speed_m_s):
+        self.vertical_speed_m_s = vertical_speed_m_s
+        self.update()
+
+    def paintEvent(self, event):
+        del event
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setPen(QtGui.QPen(QtGui.QColor('#30485f'), 1))
+        painter.setBrush(QtGui.QColor('#101c2a'))
+        painter.drawRoundedRect(self.rect().adjusted(8, 8, -8, -8), 8, 8)
+        painter.setPen(QtGui.QColor('#d9e6f4'))
+        painter.setFont(QtGui.QFont('sans-serif', 15, QtGui.QFont.Weight.Bold))
+        text = 'Unavailable' if self.vertical_speed_m_s is None else f'{self.vertical_speed_m_s:+.2f} m/s'
+        painter.drawText(self.rect().adjusted(12, 24, -12, -20),
+                         QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignHCenter, text)
+        top, bottom = 86, self.height() - 28
+        center_y = (top + bottom) / 2
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QColor('#203950'))
+        painter.drawRoundedRect(self.width() / 2 - 18, top, 36, bottom - top, 8, 8)
+        painter.setPen(QtGui.QPen(QtGui.QColor('#d9e6f4'), 2))
+        painter.drawLine(self.width() / 2 - 28, center_y, self.width() / 2 + 28, center_y)
+        if self.vertical_speed_m_s is not None:
+            fraction = max(-1., min(1., self.vertical_speed_m_s / MAX_VERTICAL_SPEED_M_S))
+            painter.setPen(QtCore.Qt.PenStyle.NoPen)
+            painter.setBrush(QtGui.QColor('#70d6ad' if fraction >= 0 else '#eab85a'))
+            height = abs(bottom - top) / 2 * abs(fraction)
+            if fraction >= 0:
+                painter.drawRoundedRect(self.width() / 2 - 18, center_y - height, 36, height, 8, 8)
+            else:
+                painter.drawRoundedRect(self.width() / 2 - 18, center_y, 36, height, 8, 8)
+        painter.end()
+
+
+class RangefinderWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.rangefinder = None
+        self.setMinimumSize(150, 360)
+        self.setAccessibleName('AGL rangefinder gauge')
+
+    def set_rangefinder(self, rangefinder):
+        self.rangefinder = rangefinder
+        self.update()
+
+    def paintEvent(self, event):
+        del event
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setPen(QtGui.QPen(QtGui.QColor('#30485f'), 1))
+        painter.setBrush(QtGui.QColor('#101c2a'))
+        painter.drawRoundedRect(self.rect().adjusted(8, 8, -8, -8), 8, 8)
+        painter.setPen(QtGui.QColor('#d9e6f4'))
+        painter.setFont(QtGui.QFont('sans-serif', 15, QtGui.QFont.Weight.Bold))
+        valid = self.rangefinder is not None and self.rangefinder.valid
+        text = 'Unavailable' if not valid else f'{self.rangefinder.distance_cm / 100:.2f} m AGL'
+        painter.drawText(self.rect().adjusted(12, 24, -12, -20), QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignHCenter, text)
+        top, bottom = 86, self.height() - 28
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QColor('#203950'))
+        painter.drawRoundedRect(self.width() / 2 - 18, top, 36, bottom - top, 8, 8)
+        if valid:
+            fraction = max(0., min(1., self.rangefinder.distance_cm / 100. / MAX_RANGEFINDER_M))
+            painter.setBrush(QtGui.QColor('#70d6ad'))
+            height = (bottom - top) * fraction
+            painter.drawRoundedRect(self.width() / 2 - 18, bottom - height, 36, height, 8, 8)
+        painter.end()
+
+
+class CameraFrame(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.image = None
+        self.bbox = None
+        self.mode = 'local'
+        self.setMinimumSize(520, 360)
+        self.setAccessibleName('Camera image')
+
+    def set_frame(self, frame: ImageFrame | None, bbox: Bbox | None):
+        self.bbox = bbox if bbox is not None and bbox.valid else None
+        if frame is None:
+            self.image = None
+        else:
+            fmt = (QtGui.QImage.Format.Format_RGB888 if frame.encoding == 'rgb8'
+                   else QtGui.QImage.Format.Format_BGR888)
+            self.image = QtGui.QImage(frame.pixels, frame.width, frame.height,
+                                      frame.width * 3, fmt).copy()
+        self.update()
+
+    def set_mode(self, mode):
+        self.mode = mode
+        self.update()
+
+    def paintEvent(self, event):
+        del event
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
+        painter.fillRect(self.rect(), QtGui.QColor('#101c2a'))
+        if self.image is None:
+            painter.setPen(QtGui.QColor('#9bb0c8'))
+            text = ('Remote image streaming is planned for v2' if self.mode == 'remote'
+                    else 'Local camera image unavailable\nSelect Local mode and start the renderer')
+            painter.drawText(self.rect(), QtCore.Qt.AlignmentFlag.AlignCenter,
+                             text)
+            painter.end()
+            return
+        target = self.rect().adjusted(8, 8, -8, -8)
+        fitted = self.image.scaled(target.size(), QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+                                   QtCore.Qt.TransformationMode.SmoothTransformation)
+        offset_x = target.x() + (target.width() - fitted.width()) // 2
+        offset_y = target.y() + (target.height() - fitted.height()) // 2
+        painter.drawImage(offset_x, offset_y, fitted)
+        scale_x = fitted.width() / self.image.width()
+        scale_y = fitted.height() / self.image.height()
+        center = QtCore.QPointF(offset_x + fitted.width() / 2, offset_y + fitted.height() / 2)
+        painter.setPen(QtGui.QPen(QtGui.QColor('#70d6ad'), 2))
+        painter.drawLine(center + QtCore.QPointF(-14, 0), center + QtCore.QPointF(14, 0))
+        painter.drawLine(center + QtCore.QPointF(0, -14), center + QtCore.QPointF(0, 14))
+        if self.bbox is not None:
+            painter.setPen(QtGui.QPen(QtGui.QColor('#eab85a'), 3))
+            x, y, width, height = self.bbox.x, self.bbox.y, self.bbox.width, self.bbox.height
+            painter.drawRect(QtCore.QRectF(offset_x + x * scale_x, offset_y + y * scale_y,
+                                           width * scale_x, height * scale_y))
+        painter.end()
+
+
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self, presenter):
+        super().__init__()
+        self.presenter = presenter
+        self._message_count = 0
+        self.setWindowTitle('Bullet View · MAVLink Telemetry')
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(820, 560)
+        self.setStyleSheet('''
+            QMainWindow, QWidget { background:#142233; color:#d9e6f4; font:13px sans-serif; }
+            QLabel#brand { font-size:23px; font-weight:700; color:#70d6ad; letter-spacing:2px; }
+            QTabWidget::pane { border:1px solid #30485f; }
+            QTabBar::tab { padding:9px 20px; background:#203950; }
+            QTabBar::tab:selected { border-bottom:2px solid #58b8f5; }
+            QFrame#card { background:#20354a; border-radius:6px; }
+        ''')
+        root = QtWidgets.QWidget()
+        outer = QtWidgets.QVBoxLayout(root)
+        outer.setContentsMargins(18, 12, 18, 12)
+        header = QtWidgets.QHBoxLayout()
+        brand = QtWidgets.QLabel('BULLET VIEW')
+        brand.setObjectName('brand')
+        header.addWidget(brand)
+        self.status = QtWidgets.QLabel('Starting MAVLink input…')
+        header.addWidget(self.status, 1)
+        self.reload_profile = QtWidgets.QPushButton('Reload mission profile')
+        self.reload_profile.setEnabled(False)
+        self.reload_profile.setToolTip('Reload the mission YAML after stopping the scenario.')
+        self.reload_profile.clicked.connect(getattr(self.presenter, 'request_reload', lambda: None))
+        header.addWidget(self.reload_profile)
+        header.addWidget(QtWidgets.QLabel('Image mode'))
+        self.image_mode = QtWidgets.QComboBox()
+        self.image_mode.addItems(['Local', 'Remote'])
+        self.image_mode.setCurrentText('Local' if getattr(presenter, 'image_mode', 'local') == 'local' else 'Remote')
+        self.image_mode.currentTextChanged.connect(self._set_image_mode)
+        header.addWidget(self.image_mode)
+        header.addWidget(QtWidgets.QLabel(presenter.endpoint))
+        outer.addLayout(header)
+        self.tabs = QtWidgets.QTabWidget()
+        self.telemetry_tab = QtWidgets.QWidget()
+        self.parameters_tab = QtWidgets.QWidget()
+        self.tabs.addTab(self.telemetry_tab, 'Telemetry')
+        self.tabs.addTab(self.parameters_tab, 'Parameters')
+        outer.addWidget(self.tabs, 1)
+        self._build_telemetry()
+        self._build_parameters()
+        self.camera_frame.set_mode(self.image_mode.currentText().lower())
+        self.setCentralWidget(root)
+        presenter.snapshot_changed.connect(self.set_snapshot)
+        presenter.status_changed.connect(self.status.setText)
+        if hasattr(presenter, 'messages_cleared'):
+            presenter.messages_cleared.connect(self._clear_message_log)
+
+    def _build_telemetry(self):
+        root = QtWidgets.QVBoxLayout(self.telemetry_tab)
+        upper = QtWidgets.QHBoxLayout()
+        left = QtWidgets.QFrame()
+        left.setObjectName('card')
+        left_layout = QtWidgets.QHBoxLayout(left)
+        self.flight_ball = FlightBall()
+        left_layout.addWidget(self.flight_ball, 1)
+        upper.addWidget(left, 3)
+        right = QtWidgets.QFrame()
+        right.setObjectName('card')
+        right_layout = QtWidgets.QHBoxLayout(right)
+        self.camera_frame = CameraFrame()
+        right_layout.addWidget(self.camera_frame, 5)
+        self.altitude = AltitudeWidget()
+        right_layout.addWidget(self.altitude, 1)
+        self.vertical_speed = VerticalSpeedWidget()
+        right_layout.addWidget(self.vertical_speed, 1)
+        self.rangefinder = RangefinderWidget()
+        right_layout.addWidget(self.rangefinder, 1)
+        upper.addWidget(right, 4)
+        root.addLayout(upper, 1)
+        lower = QtWidgets.QHBoxLayout()
+        attitude_panel = QtWidgets.QFrame()
+        attitude_panel.setObjectName('attitude_summary')
+        attitude_layout = QtWidgets.QVBoxLayout(attitude_panel)
+        attitude_layout.addWidget(QtWidgets.QLabel('ATTITUDE'))
+        attitude_row = QtWidgets.QHBoxLayout()
+        self.roll = self._value_label('Roll')
+        self.pitch = self._value_label('Pitch')
+        self.yaw = self._value_label('Yaw')
+        for label in (self.roll, self.pitch, self.yaw):
+            attitude_row.addWidget(label, 1)
+        attitude_layout.addLayout(attitude_row)
+        attitude_layout.addStretch(1)
+        lower.addWidget(attitude_panel, 1)
+        message_panel = QtWidgets.QFrame()
+        message_panel.setObjectName('status_panel')
+        message_layout = QtWidgets.QVBoxLayout(message_panel)
+        message_header = QtWidgets.QHBoxLayout()
+        message_header.addWidget(QtWidgets.QLabel('STATUS MESSAGES'))
+        message_header.addStretch(1)
+        self.auto_scroll = QtWidgets.QCheckBox('Auto-scroll')
+        self.auto_scroll.setChecked(True)
+        self.auto_scroll.setToolTip('Follow new messages, including after mission completion.')
+        self.auto_scroll.toggled.connect(self._set_auto_scroll)
+        message_header.addWidget(self.auto_scroll)
+        self.clear_log = QtWidgets.QPushButton('Clear log')
+        self.clear_log.setToolTip('Clear viewer history; remote logs and recordings are unaffected.')
+        self.clear_log.clicked.connect(getattr(self.presenter, 'clear_messages', lambda: None))
+        message_header.addWidget(self.clear_log)
+        message_layout.addLayout(message_header)
+        self.message_log = QtWidgets.QListWidget()
+        self.message_log.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self.message_log.setUniformItemSizes(True)
+        self.message_log.setMinimumHeight(125)
+        self.message_log.setAccessibleName('Mission status message log')
+        self.message_log.itemClicked.connect(self._show_message_details)
+        message_layout.addWidget(self.message_log, 1)
+        message_layout.addWidget(QtWidgets.QLabel('MESSAGE DETAILS'))
+        self.message_details = QtWidgets.QLabel(MESSAGE_DETAILS_PLACEHOLDER)
+        self.message_details.setWordWrap(True)
+        self.message_details.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
+        self.message_details.setMinimumHeight(110)
+        self.message_details.setStyleSheet('padding:8px; color:#9bb0c8;')
+        message_layout.addWidget(self.message_details)
+        lower.addWidget(message_panel, 3)
+        root.addLayout(lower, 1)
+
+    def _set_image_mode(self, mode):
+        self.camera_frame.set_mode(mode.lower())
+        setter = getattr(self.presenter, 'set_image_mode', None)
+        if setter is not None:
+            setter(mode.lower())
+
+    @staticmethod
+    def _value_label(name):
+        label = QtWidgets.QLabel(name + '\n—')
+        label.setStyleSheet('padding:12px; font-size:16px; font-weight:600')
+        return label
+
+    def _build_parameters(self):
+        layout = QtWidgets.QVBoxLayout(self.parameters_tab)
+        self.parameter_panel = ParameterPanel(self.presenter)
+        layout.addWidget(self.parameter_panel)
+
+    @QtCore.Slot(object)
+    def set_snapshot(self, snapshot: TelemetrySnapshot):
+        self.reload_profile.setEnabled(snapshot.mission_stopped)
+        self.flight_ball.set_attitude(snapshot.attitude)
+        self.altitude.set_altitude(snapshot.altitude)
+        self.vertical_speed.set_vertical_speed(snapshot.vertical_speed_m_s)
+        self.rangefinder.set_rangefinder(snapshot.rangefinder)
+        self.camera_frame.set_frame(snapshot.image, snapshot.bbox)
+        if len(snapshot.messages) < self._message_count:
+            self._clear_message_log()
+        scroll_position = self.message_log.verticalScrollBar().value()
+        new_messages = snapshot.messages[self._message_count:]
+        for message in new_messages:
+            item = QtWidgets.QListWidgetItem(message.display_text)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, message)
+            item.setForeground(QtGui.QColor(SEVERITY_COLORS.get(message.severity, '#d9e6f4')))
+            self.message_log.addItem(item)
+        self._message_count = len(snapshot.messages)
+        if new_messages and self.auto_scroll.isChecked():
+            self.message_log.scrollToBottom()
+        elif new_messages:
+            self.message_log.verticalScrollBar().setValue(scroll_position)
+        if snapshot.attitude is None:
+            for label, name in ((self.roll, 'Roll'), (self.pitch, 'Pitch'), (self.yaw, 'Yaw')):
+                label.setText(name + '\n—')
+        else:
+            values = ((self.roll, 'Roll', snapshot.attitude.roll_rad),
+                      (self.pitch, 'Pitch', snapshot.attitude.pitch_rad),
+                      (self.yaw, 'Yaw', snapshot.attitude.yaw_rad))
+            for label, name, value in values:
+                label.setText(f'{name}\n{degrees(value):+.1f}°')
+
+    def _clear_message_log(self):
+        self.message_log.clear()
+        self._message_count = 0
+        self.message_details.setText(MESSAGE_DETAILS_PLACEHOLDER)
+
+    def _set_auto_scroll(self, enabled):
+        if enabled:
+            self.message_log.scrollToBottom()
+
+    def _show_message_details(self, item):
+        message = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        definition = STATUS_MESSAGE_BY_INDEX.get(message.index)
+        severity = {2: 'CRITICAL', 3: 'ERROR', 4: 'WARNING', 5: 'NOTICE', 6: 'INFO', 7: 'DEBUG'}.get(
+            message.severity, str(message.severity))
+        description = 'No description is available for this message.' if definition is None else definition.description
+        self.message_details.setText(
+            f'Message code: {message.index:02d}\nSeverity: {severity}\n'
+            f'Context: {message.context_text}\n\n'
+            f'{description}\n\nReceived: {message.text}')
+
+    def closeEvent(self, event):
+        self.presenter.stop()
+        event.accept()
