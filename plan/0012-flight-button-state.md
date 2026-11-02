@@ -1,7 +1,7 @@
 # State-based Arm and Start mission buttons
 
 - Status: Implemented; verified 2026-11-02
-- Implementation commit: Pending
+- Implementation commit: `8653377251f426e1f1c6539191e2cd91480e447e`
 
 Gate Arm on fresh, connected, confirmed disarmed/prearm-ready state. Gate Start
 on confirmed armed idle and matching applied height. Disable both for unknown,
@@ -47,4 +47,14 @@ includes the state matrix, contradictory arming/readiness, missing/invalid heigh
 pending/old telemetry, request preemption, queue full, worker rejection, stale
 state and closed command connection. Existing recording/UI tests pass. Git
 whitespace checks passed. No running process or physical motors were actuated.
-No commits or pushes; implementation commit remains Pending.
+No commits or pushes; Implementation commit: `8653377251f426e1f1c6539191e2cd91480e447e`.
+
+## Commit record — 2026-11-02
+
+The verification notes above describe the pre-commit work. Implementation is
+now committed; nothing was pushed. These are implementation hashes, rather than
+the subsequent documentation commits that record them.
+
+| Repository | Implementation commit |
+|---|---|
+| bullet_view | `8653377251f426e1f1c6539191e2cd91480e447e` |

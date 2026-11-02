@@ -1,7 +1,7 @@
 # Manual workspace flight and viewer recording controls
 
 - Status: Implemented; verified 2026-11-02
-- Implementation commit: Pending
+- Implementation commit: `8653377251f426e1f1c6539191e2cd91480e447e`
 
 Configure the Run all launcher through a source-controlled operator config:
 manual Arm/Start and MAVLink recording. Keep standalone defaults and the existing
@@ -38,4 +38,14 @@ QApplication through interpreter shutdown; the offscreen viewer suite then passe
 three consecutive runs. Shell syntax, launcher help and Git whitespace checks
 passed. No real camera/motors were actuated, no running session was restarted,
 and no commits or pushes were made. Restart Run all to activate its settings.
-Implementation commit remains Pending.
+Implementation commit: `8653377251f426e1f1c6539191e2cd91480e447e`.
+
+## Commit record — 2026-11-02
+
+The verification notes above describe the pre-commit work. Implementation is
+now committed; nothing was pushed. These are implementation hashes, rather than
+the subsequent documentation commits that record them.
+
+| Repository | Implementation commit |
+|---|---|
+| bullet_view | `8653377251f426e1f1c6539191e2cd91480e447e` |
