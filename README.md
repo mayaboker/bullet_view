@@ -95,3 +95,55 @@ degree keys accepted by `bullet_app --mission-config <export.yaml>`. It does not
 write to the remote mission file. Download/export revision checks prevent mixing
 values from different configurations. String fields must fit MAVLink's 128-byte
 extended value after JSON encoding; both apps must use a matching catalog version.
+
+### Flight controls
+
+The persistent panel above the tabs provides **Arm**, takeoff-height slider and
+numeric editor, **Apply height**, **Start mission**, and **Disarm**. Connect to an
+application launched with `--mission-config … --arming-mode manual`; in simulation,
+start the physics/Godot session first. Production bringup selects manual mode.
+
+The editable number is a draft (0.1–100.0 m above launch). **Applied height** starts
+as unknown and displays remote telemetry only. Apply waits for both the addressed
+MAVLink ACK and a matching remote value. Start is enabled only after confirmed
+armed idle, with no pending command and draft equal to applied height. Arm alone
+holds minimum throttle. Height locks during flight.
+
+Observed arming/readiness and ACK results are shown separately. Stale or missing
+flight feedback disables Arm/Apply/Start. Disarm remains available for a known
+application target and cancels pending flight actions. During a mission or with
+unknown state it asks for emergency confirmation, default **Cancel**; confirmation
+aborts mission control and requests backend disarm. Stop/reset before rearming.
+No flight command is retried automatically. Use the existing app command endpoint
+(default `udpout:127.0.0.1:14551`), not a separate autopilot connection.
+
+Arm/Start availability follows confirmed remote state:
+
+| State | Arm | Start mission |
+|---|---|---|
+| Disarmed, prearm ready | Enabled | Disabled |
+| Armed idle, confirmed height matches editor | Disabled | Enabled |
+| Pending command, mission active, reset required, stale/unknown state or closed control connection | Disabled | Disabled |
+
+Conflicting armed/readiness reports also disable both buttons. Disabled buttons
+are visibly dimmed; the reason appears below the observed state and in tooltips.
+Submitting a command locks conflicting actions immediately, including while the
+worker queue is processing it. Disarm remains available for a known connected
+target during pending Arm/Start. Confirmed state and command results are separate.
+
+### Recording controls
+
+**Start recording** and **Stop recording** are always visible above the tabs.
+The workspace Run all task selects MAVLink recording through
+`config/operator_controls.yaml`; production bringup uses
+`recorder.control_source: mavlink`. Restart the launcher after changing authority.
+The recorder must run with `--control-mode recording`, which both launchers set.
+
+The panel shows actual remote state (idle, recording, finalizing, error, unknown)
+and control authority. Start waits for idle/error and fresh app telemetry. Stop
+can cancel a pending Start. Both operations wait for an addressed command ACK
+and matching recorder telemetry; Stop succeeds after the MCAP is finalized.
+Requests time out with an unknown outcome and are not retried automatically.
+Stale recording observations become unknown. Godot authority disables these
+buttons and displays an explanation. Recording is independent of flight Arm,
+Start mission and Disarm, and also works in detection-only sessions.

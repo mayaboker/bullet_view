@@ -9,6 +9,8 @@ from .model import TelemetrySnapshot
 from .parameters import ParameterSnapshot, save_yaml
 from .worker import MavlinkWorker
 from .image_worker import LocalImageWorker
+from .flight_control import FlightSnapshot, flight_action_block_reason
+from .recording_control import RecordingSnapshot
 
 
 STALE_AFTER_S = .75
@@ -55,6 +57,8 @@ class Presenter(QtCore.QObject):
     status_changed = QtCore.Signal(str)
     messages_cleared = QtCore.Signal()
     parameters_changed = QtCore.Signal(object)
+    flight_changed = QtCore.Signal(object)
+    recording_changed = QtCore.Signal(object)
 
     def __init__(self, endpoint, *, control_endpoint='udpout:127.0.0.1:14551',
                  image_endpoint='tcp://127.0.0.1:5556', image_topic='camera/front/image',
@@ -69,6 +73,9 @@ class Presenter(QtCore.QObject):
         self.image_mode = image_mode
         self.snapshot = TelemetrySnapshot()
         self.parameter_snapshot = ParameterSnapshot()
+        self.flight_snapshot = FlightSnapshot()
+        self._queued_flight_action = None
+        self.recording_snapshot = RecordingSnapshot()
         self._export_destination = None
         self._export_sync_started = False
         self.vertical_speed = VerticalSpeedEstimator()
@@ -82,6 +89,12 @@ class Presenter(QtCore.QObject):
         self.worker.command_result.connect(self._set_status)
         if hasattr(self.worker, 'parameters_changed'):
             self.worker.parameters_changed.connect(self._on_parameters)
+        if hasattr(self.worker, 'flight_changed'):
+            self.worker.flight_changed.connect(self._on_flight)
+        if hasattr(self.worker, 'flight_request_handled'):
+            self.worker.flight_request_handled.connect(self._on_flight_request_handled)
+        if hasattr(self.worker, 'recording_changed'):
+            self.worker.recording_changed.connect(self._on_recording)
         self.worker.finished.connect(self.thread.quit)
         self.thread.finished.connect(self.worker.deleteLater)
         self.timer = QtCore.QTimer(self)
@@ -163,6 +176,47 @@ class Presenter(QtCore.QObject):
 
     def refresh_parameters(self):
         self.worker.request_parameters()
+
+    @QtCore.Slot(object)
+    def _on_flight(self, snapshot):
+        if not snapshot.control_available:
+            self._queued_flight_action = None
+        if self._queued_flight_action is not None:
+            # Telemetry queued before the command was processed must not unlock buttons.
+            snapshot = replace(snapshot, pending=self._queued_flight_action,
+                result=f'{self._queued_flight_action}: request queued; waiting for remote confirmation')
+        self.flight_snapshot = snapshot
+        self.flight_changed.emit(snapshot)
+
+    @QtCore.Slot(str, object)
+    def _on_flight_request_handled(self, action, snapshot):
+        if self._queued_flight_action == action:
+            self._queued_flight_action = None
+        self._on_flight(snapshot)
+
+    def request_flight(self, action, value=None):
+        if action in ('arm', 'start'):
+            reason = flight_action_block_reason(self.flight_snapshot, action, value, now=self.clock())
+            if reason is not None:
+                self._set_status(reason)
+                return
+        # Disable conflicting actions immediately; observed vehicle state stays unchanged.
+        previous = self.flight_snapshot
+        previous_queued = self._queued_flight_action
+        self._queued_flight_action = action
+        self._on_flight(replace(previous, pending=action,
+                               result=f'{action}: request queued; waiting for remote confirmation'))
+        if self.worker.request_flight(action, value) is False:
+            self._queued_flight_action = previous_queued
+            self._on_flight(previous)
+
+    @QtCore.Slot(object)
+    def _on_recording(self, snapshot):
+        self.recording_snapshot = snapshot
+        self.recording_changed.emit(snapshot)
+
+    def request_recording(self, start):
+        self.worker.request_recording(start)
 
     def apply_parameter(self, id, value):
         self.worker.set_parameter(id, value)

@@ -7,10 +7,14 @@ from bullet_msgs.status_messages import (MAV_SEVERITY_ERROR, MAV_SEVERITY_INFO, 
 
 from .model import Bbox, ImageFrame, TelemetrySnapshot
 from .parameter_view import ParameterPanel
+from .flight_view import FlightPanel
+from .recording_view import RecordingPanel
 
 
 WINDOW_WIDTH = 1360
-WINDOW_HEIGHT = 720
+WINDOW_HEIGHT = 900
+CAMERA_MIN_WIDTH = 400
+ALTITUDE_MIN_WIDTH = 160
 MESSAGE_DETAILS_PLACEHOLDER = 'Select a message to inspect its description.'
 PITCH_PIXELS_PER_RAD = 85.
 MAX_ALTITUDE_M = 100.
@@ -93,7 +97,7 @@ class AltitudeWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.altitude_m = None
-        self.setMinimumSize(220, 360)
+        self.setMinimumSize(ALTITUDE_MIN_WIDTH, 360)
         self.setAccessibleName('Altitude gauge')
 
     def set_altitude(self, altitude):
@@ -206,7 +210,7 @@ class CameraFrame(QtWidgets.QWidget):
         self.image = None
         self.bbox = None
         self.mode = 'local'
-        self.setMinimumSize(520, 360)
+        self.setMinimumSize(CAMERA_MIN_WIDTH, 360)
         self.setAccessibleName('Camera image')
 
     def set_frame(self, frame: ImageFrame | None, bbox: Bbox | None):
@@ -272,6 +276,9 @@ class MainWindow(QtWidgets.QMainWindow):
             QTabBar::tab { padding:9px 20px; background:#203950; }
             QTabBar::tab:selected { border-bottom:2px solid #58b8f5; }
             QFrame#card { background:#20354a; border-radius:6px; }
+            QPushButton:enabled { background:#284b63; color:#f0f7ff; border:1px solid #58b8f5; border-radius:3px; padding:4px 8px; }
+            QPushButton:disabled { background:#192735; color:#748392; border:1px solid #304050; border-radius:3px; padding:4px 8px; }
+            QPushButton:enabled:hover { background:#35617e; }
         ''')
         root = QtWidgets.QWidget()
         outer = QtWidgets.QVBoxLayout(root)
@@ -295,10 +302,17 @@ class MainWindow(QtWidgets.QMainWindow):
         header.addWidget(self.image_mode)
         header.addWidget(QtWidgets.QLabel(presenter.endpoint))
         outer.addLayout(header)
+        self.flight_panel = FlightPanel(presenter)
+        outer.addWidget(self.flight_panel)
+        self.recording_panel = RecordingPanel(presenter)
+        outer.addWidget(self.recording_panel)
         self.tabs = QtWidgets.QTabWidget()
         self.telemetry_tab = QtWidgets.QWidget()
+        self.telemetry_scroll = QtWidgets.QScrollArea()
+        self.telemetry_scroll.setWidgetResizable(True)
+        self.telemetry_scroll.setWidget(self.telemetry_tab)
         self.parameters_tab = QtWidgets.QWidget()
-        self.tabs.addTab(self.telemetry_tab, 'Telemetry')
+        self.tabs.addTab(self.telemetry_scroll, 'Telemetry')
         self.tabs.addTab(self.parameters_tab, 'Parameters')
         outer.addWidget(self.tabs, 1)
         self._build_telemetry()
