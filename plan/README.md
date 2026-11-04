@@ -17,3 +17,5 @@
 - [0011: Manual workspace and recording controls](0011-recording-controls.md) — Implemented; 40 tests passed; commit `8653377251f426e1f1c6539191e2cd91480e447e`.
 
 - [0012: Flight button state](0012-flight-button-state.md) — Implemented; 84 tests passed; commit `8653377251f426e1f1c6539191e2cd91480e447e`.
+
+- [0013: Linux GUI icons and launchers](0013-linux-gui-icons-launchers.md) — Implemented; 78 tests and installed wheel checks passed; commit Pending.

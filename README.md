@@ -147,3 +147,39 @@ Requests time out with an unknown outcome and are not retried automatically.
 Stale recording observations become unknown. Godot authority disables these
 buttons and displays an explanation. Recording is independent of flight Arm,
 Start mission and Disarm, and also works in detection-only sessions.
+
+## Linux application icon and desktop launcher
+
+The wheel includes this application's window icon and its SVG/PNG assets. After
+installing the wheel in your environment, register the launcher with:
+
+```bash
+bullet-view --install-launcher
+```
+
+This creates a per-user application-menu entry and desktop shortcut using that
+environment's absolute Python path. No sudo, workspace checkout or `uv` is needed
+to launch the installed app. The launcher uses the app's default startup settings;
+local connection arguments, recording paths and assistant-model settings are not
+saved into the launcher or bundled icon assets.
+
+Use `bullet-view --install-launcher --menu-only` for a menu entry without a desktop
+shortcut (this also removes a previous unchanged managed desktop shortcut).
+Remove the registered entries and icons before deleting the environment:
+
+```bash
+bullet-view --uninstall-launcher
+```
+
+Re-running setup updates unchanged managed files and binds the launcher to the
+current environment. Unmanaged or edited files are preserved and reported as
+conflicts. Entries use `XDG_DATA_HOME` (normally `~/.local/share`) and the desktop
+location from `xdg-user-dir`, falling back to `~/Desktop`. Moving/replacing the
+Python environment requires running setup again.
+
+Desktop shortcuts are executable; where supported, setup marks them trusted.
+Ubuntu may still require right-click **Allow Launching**, and displaying shortcuts
+requires a desktop environment that supports desktop icons. Optional menu/icon
+cache utilities are used when available. Setup is explicit: installing/building a
+wheel alone does not modify the desktop. Windows/system-wide installers and file
+associations are not included.
