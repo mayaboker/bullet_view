@@ -96,7 +96,8 @@ class FlightPanel(QtWidgets.QGroupBox):
         self.height.setEnabled(editable)
         self.apply.setEnabled(editable)
         self.start.setEnabled(start_reason is None)
-        self.start.setText('Takeoff' if snapshot.mode == 'manual' else 'Start auto mission')
+        self.start.setText('Takeoff' if snapshot.mode == 'manual' else
+                           'Start target mission' if snapshot.mission == 'target-hit' else 'Start auto mission')
         self.start.setToolTip(start_reason or 'Start takeoff using the confirmed height')
         self.land.setEnabled(land_reason is None)
         self.land.setToolTip(land_reason or 'Land and disarm')
@@ -105,7 +106,8 @@ class FlightPanel(QtWidgets.QGroupBox):
                                  or not remote.valid))
         self.disarm.setEnabled(disarm_available)
         self.availability_label.setText(f'Arm: {arm_reason or "ready"} · Start: {start_reason or "ready"} · Land: {land_reason or "ready"}')
-        self.mode_label.setText(f'App mode: {snapshot.mode} · Phase: {snapshot.phase}')
+        self.mode_label.setText(f'App mode: {snapshot.mode} · Mission: {snapshot.mission} · '
+                                f'Phase: {snapshot.phase} · Result: {snapshot.mission_result}')
         arm = 'unknown' if remote.armed is None or not remote.valid else 'armed' if remote.armed else 'disarmed'
         height = 'unknown' if remote.height_m is None else f'{remote.height_m:.1f} m'
         self.state_label.setText(f'Observed: {arm} · Applied height: {height} · {READINESS_TEXT.get(remote.readiness, "unknown")}')

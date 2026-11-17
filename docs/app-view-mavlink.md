@@ -32,10 +32,10 @@ on the local UDP link, not authentication.
 | Direction | Message | When sent | Meaning |
 | --- | --- | --- | --- |
 | App → View, port 14550 | `HEARTBEAT` | About 1 Hz | Quadrotor heartbeat with firmware armed flag and App standby/active status. |
-| App → View, port 14550 | `NAMED_VALUE_FLOAT` | Six values about 10 times/s | Armed state, validity, mission readiness, height, App mode, and phase; see below. |
+| App → View, port 14550 | `NAMED_VALUE_FLOAT` | Nine values about 10 times/s | Armed state, validity, readiness, height, App mode, selected mission, phase, result, and detector readiness; see below. |
 | App → View, port 14550 | `ATTITUDE` | Up to 20 Hz while SITL attitude is fresh | Roll, pitch, yaw, and angular rates relayed from SITL. |
 | App → View, port 14550 | `ALTITUDE` | Up to 20 Hz while SITL `VFR_HUD` altitude is fresh | `altitude_local` in metres relative to the mission ground datum; other altitude fields are `NaN`. |
-| App → View, port 14550 | `STATUSTEXT` | When the App phase changes | Phase name, or fault reason in the fault phase. |
+| App → View, port 14550 | `STATUSTEXT` | On phase/result changes or a denied command | Phase, result, fault, or command-denial reason. |
 | View → App, reply on same socket | `HEARTBEAT` | About 1 Hz after the first valid App packet | Identifies View as a ground station and keeps its control link alive. |
 | View → App, reply on same socket | `COMMAND_LONG` | When an operator requests a flight action | Arm, disarm, emergency disarm, start/takeoff, set height, or land. |
 | App → View, port 14550 | `COMMAND_ACK` | Once per addressed `COMMAND_LONG` processed | `MAV_RESULT_ACCEPTED` or `MAV_RESULT_DENIED`, addressed to View `255/190`. |
@@ -48,7 +48,7 @@ enabling ordinary flight actions.
 
 ## `NAMED_VALUE_FLOAT` state
 
-The six values in each update share a `time_boot_ms` value so View can assemble
+The nine values in each update share a `time_boot_ms` value so View can assemble
 the four core flight fields into one state snapshot.
 
 | Name | Values and meaning |
@@ -58,10 +58,13 @@ the four core flight fields into one state snapshot.
 | `MIS_READY` | `0` unavailable/prearm or transition, `1` disarmed idle, `2` armed idle, `3` flying, `4` fault/reset required. |
 | `TAKEOFF_H` | Requested takeoff height in metres above the launch datum. Auto mode uses 10 m; manual mode can set 0.1–100 m in 0.1 m steps. |
 | `APP_MODE` | `0` auto, `1` manual. Mode is selected when App starts. |
-| `APP_PHASE` | `0` prearm, `1` disarmed, `2` arming, `3` armed, `4` takeoff, `5` hover, `6` land, `7` disarming, `8` fault. |
+| `APP_PHASE` | `0` prearm, `1` disarmed, `2` arming, `3` armed, `4` takeoff, `5` hover, `6` land, `7` disarming, `8` fault, `9` search, `10` center, `11` settle, `12` LOS, `13` commit. |
+| `APP_MSN` | `0` manual, `1` hover-land, `2` target-hit. MAVLink named-value names are limited to 10 bytes. |
+| `APP_RESULT` | `0` pending, `1` hit, `2` failed; `STATUSTEXT` gives the failure reason. |
+| `VIS_READY` | `1` when a recent detector result is available, including a no-target result; otherwise `0`. View disables target mission Start when this is `0`. |
 
 View uses `ARM_MODE`, `ARM_VALID`, `MIS_READY`, and `TAKEOFF_H` together as its
-flight state. It also displays `APP_MODE` and `APP_PHASE`. If the assembled
+flight state. It also displays `APP_MODE`, `APP_MSN`, `APP_PHASE`, and `APP_RESULT`. If the assembled
 flight state becomes stale, View blocks normal flight commands. A successful
 ACK alone does not complete an action in View: it waits for matching App state.
 
@@ -75,7 +78,7 @@ zero. App rejects non-finite or unsupported parameter combinations.
 | Arm | `400` (`MAV_CMD_COMPONENT_ARM_DISARM`) | `param1=1` | App must be disarmed and ready. |
 | Disarm | `400` | `param1=0`, `param2=0` | Normal disarm is for the ground/armed idle state. |
 | Emergency disarm | `400` | `param1=0`, `param2=21196` | Enters App fault and stops normal flight control. |
-| Start auto mission or manual takeoff | `300` (`MAV_CMD_MISSION_START`) | All zero | Confirmed armed state and fresh altitude are required. |
+| Start auto mission or manual takeoff | `300` (`MAV_CMD_MISSION_START`) | All zero | Confirmed armed state and fresh altitude are required; target-hit also requires a live detector. |
 | Set manual takeoff height | `31012` | `param1=height_m` | Manual mode and disarmed/armed idle; 0.1–100 m in 0.1 m steps. |
 | Land | `21` (`MAV_CMD_NAV_LAND`) | All zero | Manual mode during takeoff or hover. Auto mode lands on its own after the hover period. |
 

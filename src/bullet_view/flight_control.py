@@ -12,7 +12,9 @@ NO_COMMAND_RESULT = 'No flight command sent'
 LAND_COMMAND = 21
 VIEW_ACTION_IDS = {**ACTION_IDS, 'land': 6}
 PHASE_NAMES = ('prearm', 'disarmed', 'arming', 'armed', 'takeoff', 'hover', 'land',
-               'disarming', 'fault')
+               'disarming', 'fault', 'search', 'center', 'settle', 'los', 'commit')
+MISSION_NAMES = {0.: 'manual', 1.: 'hover-land', 2.: 'target-hit'}
+RESULT_NAMES = {0.: 'pending', 1.: 'hit', 2.: 'failed'}
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,9 @@ class FlightSnapshot:
     control_available: bool = True
     mode: str = 'manual'
     phase: str = 'unknown'
+    mission: str = 'unknown'
+    mission_result: str = 'pending'
+    vision_ready: bool = False
 
 
 def flight_action_block_reason(snapshot, action, height_m=None, *, now=None):
@@ -37,6 +42,10 @@ def flight_action_block_reason(snapshot, action, height_m=None, *, now=None):
         return 'Waiting for fresh arming feedback'
     if snapshot.pending is not None:
         return f'Waiting for {snapshot.pending} confirmation'
+    if snapshot.mission == 'target-hit' and snapshot.mission_result != 'pending' and action in ('arm', 'start'):
+        return 'Target mission completed; restart App and launcher'
+    if action == 'start' and snapshot.mission == 'target-hit' and not snapshot.vision_ready:
+        return 'Waiting for live target detector'
     if remote.readiness == RESET_REQUIRED:
         return 'Stop/reset required before arming'
     if remote.readiness == FLYING and action != 'land':
@@ -77,10 +86,14 @@ class FlightClient:
         self.control_available = True
         self.mode = 'unknown'
         self.phase = 'unknown'
+        self.mission = 'unknown'
+        self.mission_result = 'pending'
+        self.vision_ready = False
 
     def snapshot(self):
         return FlightSnapshot(self.remote, None if self.pending is None else self.pending['action'], self.result,
-                              self.control_available, self.mode, self.phase)
+                              self.control_available, self.mode, self.phase, self.mission, self.mission_result,
+                              self.vision_ready)
 
     def set_available(self, available):
         self.control_available = available
@@ -95,6 +108,18 @@ class FlightClient:
             return
         if name == 'APP_MODE':
             self.mode = {0.: 'auto', 1.: 'manual'}.get(float(message.value), 'unknown')
+            self.notify()
+            return
+        if name == 'APP_MSN':
+            self.mission = MISSION_NAMES.get(float(message.value), 'unknown')
+            self.notify()
+            return
+        if name == 'VIS_READY':
+            self.vision_ready = float(message.value) == 1.
+            self.notify()
+            return
+        if name == 'APP_RESULT':
+            self.mission_result = RESULT_NAMES.get(float(message.value), 'unknown')
             self.notify()
             return
         if name == 'APP_PHASE':

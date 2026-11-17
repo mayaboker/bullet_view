@@ -215,7 +215,7 @@ class MavlinkWorker(QtCore.QObject):
         elif kind == 'NAMED_VALUE_FLOAT':
             raw_name = message.name.decode('ascii', errors='ignore') if isinstance(message.name, bytes) else message.name
             name = str(raw_name).rstrip('\0')
-            if name in FLIGHT_NAMES or name in ('APP_MODE', 'APP_PHASE'):
+            if name in FLIGHT_NAMES or name in ('APP_MODE', 'APP_PHASE', 'APP_MSN', 'APP_RESULT', 'VIS_READY'):
                 self.flight.named(message, name, received_at_s)
                 return
             if name in RECORDING_NAMES:

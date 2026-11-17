@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from dataclasses import replace
 import pytest
 from PySide6 import QtCore, QtWidgets
-from bullet_view.flight_control import FlightClient, FlightSnapshot
+from bullet_view.flight_control import FlightClient, FlightSnapshot, flight_action_block_reason
 from bullet_view.flight_view import FlightPanel
 from bullet_msgs.flight_control import *
 
@@ -91,6 +91,24 @@ def test_start_and_airborne_height_guards():
     assert c.pending is None
     with pytest.raises(ValueError): c.request('height',6.,mav,1.3)
     with pytest.raises(ValueError): c.request('disarm',None,mav,1.3)
+
+
+def test_target_mission_status_and_single_attempt_gate():
+    c, mav, _, _ = client()
+    state(c, 1.)
+    c.named(packet(time_boot_ms=1000, value=2.), 'APP_MSN', 1.)
+    c.named(packet(time_boot_ms=1000, value=9.), 'APP_PHASE', 1.)
+    assert c.snapshot().mission == 'target-hit'
+    assert c.snapshot().phase == 'search'
+    state(c, 1.1, True, 10., ARMED_IDLE)
+    assert flight_action_block_reason(c.snapshot(), 'start', 10., now=1.1) == 'Waiting for live target detector'
+    c.named(packet(time_boot_ms=1100, value=1.), 'VIS_READY', 1.1)
+    assert flight_action_block_reason(c.snapshot(), 'start', 10., now=1.1) is None
+    c.named(packet(time_boot_ms=1000, value=1.), 'APP_RESULT', 1.)
+    assert c.snapshot().mission_result == 'hit'
+    state(c, 1.2, False, 10., DISARMED_IDLE)
+    with pytest.raises(ValueError, match='restart'):
+        c.request('arm', None, mav, 1.2)
 
 
 def test_manual_land_requires_ack_and_observed_landing_phase():

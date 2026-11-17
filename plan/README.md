@@ -27,3 +27,4 @@
 - [0016: Disarm button availability](0016-disarm-button-availability.md) — Keep Arm and Disarm mutually exclusive in disarmed idle; Implemented, focused tests passed; commit Pending.
 
 - [0017: Single-port Bullet App link](0017-single-port-app-link.md) — Use one UDP socket for App telemetry, View commands, and ACKs; Implemented and verified; commit Pending.
+- [0018: Target mission status](0018-target-mission-status.md) — Show target mission, phase and result; Pending, focused tests passed; commit Pending.
