@@ -14,12 +14,13 @@ def packet(**fields):
 
 
 def state(client, now, armed=False, height=20., readiness=DISARMED_IDLE, valid=True):
+    client.named(packet(time_boot_ms=round(now*1000), value=1.), 'APP_MODE', now)
     for name, value in zip(FLIGHT_NAMES, (float(armed), float(valid), readiness, height)):
         client.named(packet(time_boot_ms=round(now*1000),value=value), name, now)
 
 
 def ack(command, action, result=0, **extra):
-    p = packet(command=command, result=result, result_param2=ACTION_IDS[action],
+    p = packet(command=command, result=result, result_param2={**ACTION_IDS, 'land': 6}[action],
                target_system=255, target_component=190)
     p.__dict__.update(extra)
     return p
@@ -92,6 +93,19 @@ def test_start_and_airborne_height_guards():
     with pytest.raises(ValueError): c.request('disarm',None,mav,1.3)
 
 
+def test_manual_land_requires_ack_and_observed_landing_phase():
+    c, mav, _, sent = client()
+    state(c, 1., True, 3., FLYING)
+    c.named(packet(time_boot_ms=1000, value=5.), 'APP_PHASE', 1.)
+    c.request('land', None, mav, 1.1)
+    assert sent[-1][2] == 21
+    c.ack(ack(21, 'land'), 1.2)
+    assert c.pending is not None
+    state(c, 1.3, True, 3., FLYING)
+    c.named(packet(time_boot_ms=1300, value=6.), 'APP_PHASE', 1.3)
+    assert c.pending is None
+
+
 class Presenter(QtCore.QObject):
     flight_changed = QtCore.Signal(object)
     def __init__(self):
@@ -104,11 +118,18 @@ def test_panel_slider_editor_unknown_pending_and_cancel(monkeypatch):
     p=Presenter(); panel=FlightPanel(p)
     assert 'unknown' in panel.state_label.text() and not panel.arm.isEnabled()
     panel.set_snapshot(FlightSnapshot(FlightState(False,True,DISARMED_IDLE,20.,1.,(1,1))))
+    assert panel.arm.isEnabled() and not panel.disarm.isEnabled()
     panel.slider.setValue(55)
     assert panel.height.value()==5.5
     panel.height.setValue(6.)
     assert panel.slider.value()==60
     panel.apply.click()
+    assert p.requests==[('height',6.)]
+    panel.set_snapshot(FlightSnapshot(FlightState(False,True,DISARMED_IDLE,20.,1.,(1,1)), pending='arm'))
+    assert not panel.arm.isEnabled() and panel.disarm.isEnabled()
+    monkeypatch.setattr(QtWidgets.QMessageBox, 'warning',
+                        lambda *args: QtWidgets.QMessageBox.StandardButton.Cancel)
+    panel.disarm.click()
     assert p.requests==[('height',6.)]
     panel.set_snapshot(FlightSnapshot(FlightState(True,True,ARMED_IDLE,5.5,1.,(1,1))))
     assert not panel.start.isEnabled()
@@ -128,22 +149,30 @@ def test_panel_slider_editor_unknown_pending_and_cancel(monkeypatch):
     monkeypatch.setattr(QtWidgets.QMessageBox,'warning',lambda *args:QtWidgets.QMessageBox.StandardButton.Yes)
     panel.disarm.click()
     assert p.requests[-1]==('emergency',)
+    panel.set_snapshot(FlightSnapshot(FlightState(True,True,FLYING,5.5,1.,(1,1)),
+                                      mode='manual', phase='hover'))
+    assert panel.land.isEnabled()
+    panel.land.click()
+    assert p.requests[-1]==('land',)
+    panel.height.setValue(10.)
+    panel.set_snapshot(FlightSnapshot(FlightState(True,True,ARMED_IDLE,10.,1.,(1,1)),
+                                      mode='auto', phase='armed'))
+    assert panel.start.isEnabled() and panel.start.text() == 'Start auto mission'
+    assert not panel.height.isEnabled() and not panel.apply.isEnabled() and not panel.land.isEnabled()
     panel.close()
 
 
-def test_worker_cleanup_closes_both_connections_and_always_finishes():
+def test_worker_cleanup_closes_single_connection_and_always_finishes():
     from bullet_view.worker import MavlinkWorker
     calls=[]
     def close_bad():
         calls.append('bad'); raise OSError('socket close failure')
     one=SimpleNamespace(close=close_bad,mav=object())
-    two=SimpleNamespace(close=lambda:calls.append('good'),mav=object())
-    connections=iter((one,two))
-    worker=MavlinkWorker('telemetry',control_endpoint='control',connection_factory=lambda _:next(connections))
-    # Initialization fails at use_mavlink2's incomplete fake transport; both acquired sockets still close.
+    worker=MavlinkWorker('telemetry',connection_factory=lambda _:one)
+    # Initialization fails at use_mavlink2's incomplete fake transport; the acquired socket still closes.
     finished=[];worker.finished.connect(lambda:finished.append(True))
     worker.run()
-    assert calls==['bad','good'] and finished==[True]
+    assert calls==['bad'] and finished==[True]
 
 
 @pytest.mark.parametrize('armed,readiness,valid,pending,available,target,expected', [
@@ -167,6 +196,7 @@ def test_panel_arm_start_state_matrix(armed,readiness,valid,pending,available,ta
     remote=FlightState(armed,valid,readiness,20.,1.,target)
     panel.set_snapshot(FlightSnapshot(remote,pending,control_available=available))
     assert (panel.arm.isEnabled(),panel.start.isEnabled())==expected
+    assert not (panel.arm.isEnabled() and panel.disarm.isEnabled())
     assert panel.arm.toolTip() and panel.start.toolTip()
     assert 'Arm:' in panel.availability_label.text() and 'Start:' in panel.availability_label.text()
     panel.close()
@@ -190,7 +220,7 @@ def test_client_cannot_arm_or_start_with_conflicting_observed_state():
     assert sent==[]
 
 
-def test_control_connection_failure_keeps_flight_actions_disabled_after_telemetry():
+def test_connection_failure_keeps_flight_actions_disabled_after_telemetry():
     c,mav,_,sent=client();state(c,1.)
     c.offline();state(c,1.1)
     assert c.remote.valid and not c.snapshot().control_available

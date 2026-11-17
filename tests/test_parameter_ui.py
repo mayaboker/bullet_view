@@ -10,7 +10,7 @@ from bullet_msgs.parameters import (BY_PATH, CATALOG, CATALOG_ID, CATALOG_VERSIO
 from bullet_view.parameters import ParameterClient, ParameterSnapshot, yaml_export
 from bullet_view.parameter_view import ParameterPanel
 from bullet_view.model import TelemetrySnapshot
-from los_tracking import NavigatorConfig
+NavigatorConfig = pytest.importorskip('los_tracking', reason='legacy parameter panel is disabled').NavigatorConfig
 
 PROFILE=Path(__file__).resolve().parents[3]/'config/betaflight_los_heavy_quad.yaml'
 

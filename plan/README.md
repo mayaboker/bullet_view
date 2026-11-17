@@ -19,3 +19,11 @@
 - [0012: Flight button state](0012-flight-button-state.md) — Implemented; 84 tests passed; commit `8653377251f426e1f1c6539191e2cd91480e447e`.
 
 - [0013: Linux GUI icons and launchers](0013-linux-gui-icons-launchers.md) — Implemented; 78 tests and installed wheel checks passed; commit Pending.
+
+- [0014: VS Code run task](0014-vscode-run-task.md) — Run this checkout of Bullet View from VS Code; Implemented, command verified; commit Pending.
+
+- [0015: App-only flight control](0015-app-only-flight-control.md) — View controls app-owned Auto and Manual flights; Implemented, tests and SITL checks passed; commit Pending.
+
+- [0016: Disarm button availability](0016-disarm-button-availability.md) — Keep Arm and Disarm mutually exclusive in disarmed idle; Implemented, focused tests passed; commit Pending.
+
+- [0017: Single-port Bullet App link](0017-single-port-app-link.md) — Use one UDP socket for App telemetry, View commands, and ACKs; Implemented and verified; commit Pending.

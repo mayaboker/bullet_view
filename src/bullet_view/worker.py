@@ -5,9 +5,10 @@ from bullet_msgs.parameters import use_mavlink2
 from bullet_msgs.status_messages import parse_status_text
 from .parameters import ParameterClient, GCS_SYSTEM_ID, GCS_COMPONENT_ID
 from bullet_msgs.flight_control import FLIGHT_NAMES, FLIGHT_COMMANDS
-from .flight_control import FlightClient
+from .flight_control import FlightClient, LAND_COMMAND, APP_TARGET
 from bullet_msgs.mavlink_control import RECORDING_NAMES, RECORDING_CONTROL_COMMAND
 from .recording_control import RecordingClient
+from .peer_udp import AppPeerUDP
 import time
 from math import isfinite
 
@@ -18,6 +19,7 @@ from .model import Attitude, Altitude, Bbox, Heartbeat, Rangefinder, StatusText,
 
 
 RECEIVE_TIMEOUT_S = .01
+GCS_HEARTBEAT_PERIOD_S = 1.0
 PARAMETER_COMMAND_CAPACITY = 64
 BBOX_NAMES = {'BBOX_VALID', 'BBOX_X', 'BBOX_Y', 'BBOX_W', 'BBOX_H'}
 
@@ -33,16 +35,13 @@ class MavlinkWorker(QtCore.QObject):
     flight_request_handled = QtCore.Signal(str, object)
     recording_changed = QtCore.Signal(object)
 
-    def __init__(self, endpoint, *, control_endpoint=None,
-                 connection_factory=mavutil.mavlink_connection, clock=time.monotonic):
+    def __init__(self, endpoint, *, connection_factory=AppPeerUDP, clock=time.monotonic):
         super().__init__()
         self.endpoint = endpoint
         self.connection_factory = connection_factory
-        self.control_endpoint = control_endpoint
         self.clock = clock
         self.stop_requested = Event()
         self.connection = None
-        self.control_connection = None
         self.reload_requested = Event()
         self.bbox_values = {}
         self.parameter_commands = Queue(maxsize=PARAMETER_COMMAND_CAPACITY)
@@ -69,9 +68,9 @@ class MavlinkWorker(QtCore.QObject):
         selected = [False] if False in requests else requests
         for start in selected:
             try:
-                if self.control_connection is None:
+                if self.connection is None:
                     raise ValueError('Recording control connection unavailable')
-                self.recording.request(start, self.control_connection.mav, self.clock())
+                self.recording.request(start, self.connection.mav, self.clock())
             except ValueError as error:
                 self.command_result.emit(str(error))
         self.recording.poll(self.clock())
@@ -96,9 +95,9 @@ class MavlinkWorker(QtCore.QObject):
         selected = (emergencies or disarms)[-1:] if disarms else commands
         for action, value in selected:
             try:
-                if self.control_connection is None:
+                if self.connection is None:
                     raise ValueError('Flight control connection unavailable')
-                self.flight.request(action, value, self.control_connection.mav, self.clock())
+                self.flight.request(action, value, self.connection.mav, self.clock())
             except ValueError as error:
                 self.command_result.emit(str(error))
                 self.flight.result = str(error)
@@ -125,9 +124,9 @@ class MavlinkWorker(QtCore.QObject):
             self.command_result.emit('Parameter request queue full; try again shortly')
 
     def _poll_parameters(self):
-        if self.control_connection is None:
+        if self.connection is None:
             return
-        mav = self.control_connection.mav
+        mav = self.connection.mav
         try:
             action, id, value = self.parameter_commands.get_nowait()
         except Empty:
@@ -146,41 +145,36 @@ class MavlinkWorker(QtCore.QObject):
     def run(self):
         try:
             self.connection = self.connection_factory(self.endpoint)
-            if self.control_endpoint is not None:
-                self.control_connection = self.connection_factory(self.control_endpoint)
             use_mavlink2(self.connection, GCS_SYSTEM_ID, GCS_COMPONENT_ID)
-            if self.control_connection is not None:
-                use_mavlink2(self.control_connection, GCS_SYSTEM_ID, GCS_COMPONENT_ID)
-            self.recording.set_available(self.control_connection is not None)
-            self.flight.set_available(self.control_connection is not None)
+            self.recording.set_available(False)
+            self.flight.set_available(True)
             self.connected.emit()
+            next_heartbeat = self.clock()
             while not self.stop_requested.is_set():
-                self._poll_parameters()
+                now = self.clock()
+                if getattr(self.connection, 'peer', None) is not None and now >= next_heartbeat:
+                    self.connection.mav.heartbeat_send(
+                        mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                        0, 0, mavutil.mavlink.MAV_STATE_ACTIVE, 3)
+                    next_heartbeat = now + GCS_HEARTBEAT_PERIOD_S
                 self._poll_flight()
-                self._poll_recording()
-                if self.control_connection is not None and self.reload_requested.is_set():
-                    self.control_connection.mav.command_long_send(
-                        1, 1, 31010, 0, 1.0, 0., 0., 0., 0., 0., 0.)
-                    self.reload_requested.clear()
-                if self.control_connection is not None:
-                    ack = self.control_connection.recv_match(type=['COMMAND_ACK', 'PARAM_EXT_VALUE', 'PARAM_EXT_ACK'], blocking=False)
-                    if ack is not None:
-                        if ack.get_type() == 'COMMAND_ACK':
-                            if ack.command in FLIGHT_COMMANDS:
-                                self.flight.ack(ack, self.clock())
-                            elif ack.command == RECORDING_CONTROL_COMMAND:
-                                self.recording.ack(ack, self.clock())
-                            elif ack.command == 31010:
-                                self.command_result.emit(f'Reload command result: {ack.result}')
-                        else:
-                            self.parameters.handle(ack, self.clock(), self.control_connection.mav)
                 message = self.connection.recv_match(
-                type=['HEARTBEAT', 'ATTITUDE', 'ALTITUDE', 'DISTANCE_SENSOR', 'STATUSTEXT', 'NAMED_VALUE_FLOAT'],
+                    type=['HEARTBEAT', 'ATTITUDE', 'ALTITUDE', 'DISTANCE_SENSOR', 'STATUSTEXT',
+                          'NAMED_VALUE_FLOAT', 'COMMAND_ACK'],
                     blocking=True,
                     timeout=RECEIVE_TIMEOUT_S,
                 )
                 if message is not None:
-                    self._emit_message(message, self.clock())
+                    if (message.get_srcSystem(), message.get_srcComponent()) != APP_TARGET:
+                        continue
+                    if hasattr(self.connection, 'select_sender'):
+                        self.connection.select_sender()
+                    received_at = self.clock()
+                    if message.get_type() == 'COMMAND_ACK':
+                        if message.command in FLIGHT_COMMANDS | {LAND_COMMAND}:
+                            self.flight.ack(message, received_at)
+                    else:
+                        self._emit_message(message, received_at)
         except Exception as error:
             if not self.stop_requested.is_set():
                 self.failed.emit(str(error))
@@ -190,20 +184,17 @@ class MavlinkWorker(QtCore.QObject):
             self.parameters.online = self.parameters.complete = False
             self.parameters.emit()
             try:
-                for connection in (self.connection, self.control_connection):
-                    if connection is not None:
-                        try:
-                            connection.close()
-                        except OSError as error:
-                            self.failed.emit(f'MAVLink close failed: {error}')
+                if self.connection is not None:
+                    try:
+                        self.connection.close()
+                    except OSError as error:
+                        self.failed.emit(f'MAVLink close failed: {error}')
             finally:
                 self.finished.emit()
 
     def _emit_message(self, message, received_at_s):
         kind = message.get_type()
         if kind == 'HEARTBEAT':
-            if self.control_connection is not None:
-                self.parameters.heartbeat(message, received_at_s, self.control_connection.mav)
             value = Heartbeat(getattr(message, 'base_mode', 0),
                               getattr(message, 'system_status', 0), received_at_s)
         elif kind == 'ATTITUDE':
@@ -224,7 +215,7 @@ class MavlinkWorker(QtCore.QObject):
         elif kind == 'NAMED_VALUE_FLOAT':
             raw_name = message.name.decode('ascii', errors='ignore') if isinstance(message.name, bytes) else message.name
             name = str(raw_name).rstrip('\0')
-            if name in FLIGHT_NAMES:
+            if name in FLIGHT_NAMES or name in ('APP_MODE', 'APP_PHASE'):
                 self.flight.named(message, name, received_at_s)
                 return
             if name in RECORDING_NAMES:

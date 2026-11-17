@@ -8,7 +8,6 @@ from pymavlink import mavutil
 from .model import TelemetrySnapshot
 from .parameters import ParameterSnapshot, save_yaml
 from .worker import MavlinkWorker
-from .image_worker import LocalImageWorker
 from .flight_control import FlightSnapshot, flight_action_block_reason
 from .recording_control import RecordingSnapshot
 
@@ -60,16 +59,12 @@ class Presenter(QtCore.QObject):
     flight_changed = QtCore.Signal(object)
     recording_changed = QtCore.Signal(object)
 
-    def __init__(self, endpoint, *, control_endpoint='udpout:127.0.0.1:14551',
-                 image_endpoint='tcp://127.0.0.1:5556', image_topic='camera/front/image',
-                 image_mode='remote', worker_factory=MavlinkWorker, clock=time.monotonic):
+    def __init__(self, endpoint, *, image_mode='remote', worker_factory=MavlinkWorker,
+                 clock=time.monotonic):
         super().__init__()
         self.endpoint = endpoint
-        self.control_endpoint = control_endpoint
         self.worker_factory = worker_factory
         self.clock = clock
-        self.image_endpoint = image_endpoint
-        self.image_topic = image_topic
         self.image_mode = image_mode
         self.snapshot = TelemetrySnapshot()
         self.parameter_snapshot = ParameterSnapshot()
@@ -80,7 +75,7 @@ class Presenter(QtCore.QObject):
         self._export_sync_started = False
         self.vertical_speed = VerticalSpeedEstimator()
         self.thread = QtCore.QThread(self)
-        self.worker = worker_factory(endpoint, control_endpoint=control_endpoint)
+        self.worker = worker_factory(endpoint)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.update.connect(self._on_update)
@@ -100,13 +95,9 @@ class Presenter(QtCore.QObject):
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(VIEW_REFRESH_PERIOD_MS)
         self.timer.timeout.connect(self._refresh_freshness)
-        self.image_thread = None
-        self.image_worker = None
 
     def start(self):
         self.thread.start()
-        if self.image_mode == 'local':
-            self._start_image_worker()
         self.timer.start()
 
     def stop(self):
@@ -115,40 +106,11 @@ class Presenter(QtCore.QObject):
         if self.thread.isRunning():
             self.thread.quit()
             self.thread.wait(2000)
-        self._stop_image_worker()
 
     def set_image_mode(self, mode):
-        if mode not in ('local', 'remote') or mode == self.image_mode:
-            return
-        self.image_mode = mode
-        if mode == 'local':
-            self._start_image_worker()
-        else:
-            self._stop_image_worker()
-            self.snapshot = replace(self.snapshot, image=None)
-            self.snapshot_changed.emit(self.snapshot)
-
-    def _start_image_worker(self):
-        if self.image_thread is not None and self.image_thread.isRunning():
-            return
-        self.image_thread = QtCore.QThread(self)
-        self.image_worker = LocalImageWorker(self.image_endpoint, self.image_topic)
-        self.image_worker.moveToThread(self.image_thread)
-        self.image_thread.started.connect(self.image_worker.run)
-        self.image_worker.frame.connect(self._on_frame)
-        self.image_worker.failed.connect(lambda message: self._set_status('Image: ' + message))
-        self.image_worker.finished.connect(self.image_thread.quit)
-        self.image_thread.finished.connect(self.image_worker.deleteLater)
-        self.image_thread.start()
-
-    def _stop_image_worker(self):
-        if self.image_worker is not None:
-            self.image_worker.request_stop()
-        if self.image_thread is not None and self.image_thread.isRunning():
-            self.image_thread.quit()
-            self.image_thread.wait(2000)
-        self.image_worker = None
-        self.image_thread = None
+        if mode != 'remote':
+            raise ValueError('Camera is unavailable until Bullet App relays images')
+        self.image_mode = 'remote'
 
     @QtCore.Slot(object)
     def _on_frame(self, frame):

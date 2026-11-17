@@ -1,7 +1,13 @@
 from bullet_view.model import Bbox, StatusText, TelemetryUpdate
 from bullet_view.presenter import Presenter, VerticalSpeedEstimator
 from bullet_view.worker import MavlinkWorker
+from bullet_view.peer_udp import AppPeerUDP
 import pytest
+import socket
+from threading import Thread
+from time import monotonic, sleep
+from pymavlink import mavutil
+from bullet_msgs.parameters import use_mavlink2
 
 
 class Message:
@@ -11,6 +17,78 @@ class Message:
 
     def get_type(self):
         return self.kind
+
+
+def test_app_peer_udp_replies_only_to_selected_sender():
+    listener = AppPeerUDP('udpin:127.0.0.1:0')
+    app = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    stranger = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    replacement = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        destination = listener.port.getsockname()
+        for sender in (app, stranger, replacement):
+            sender.bind(('127.0.0.1', 0))
+            sender.settimeout(.1)
+        with pytest.raises(ConnectionError, match='No Bullet App peer'):
+            listener.write(b'early')
+        stranger.sendto(b'unknown', destination)
+        assert listener.recv() == b'unknown'
+        app.sendto(b'app', destination)
+        assert listener.recv() == b'app'
+        listener.select_sender()
+        listener.write(b'reply')
+        assert app.recvfrom(100)[0] == b'reply'
+        with pytest.raises(TimeoutError):
+            stranger.recvfrom(100)
+        replacement.sendto(b'restarted', destination)
+        assert listener.recv() == b'restarted'
+        listener.select_sender()
+        listener.write(b'new reply')
+        assert replacement.recvfrom(100)[0] == b'new reply'
+    finally:
+        listener.close()
+        app.close()
+        stranger.close()
+        replacement.close()
+
+
+def test_worker_uses_one_udp_socket_for_app_stream_command_and_ack():
+    listener = AppPeerUDP('udpin:127.0.0.1:0')
+    port = listener.port.getsockname()[1]
+    worker = MavlinkWorker(f'udpin:127.0.0.1:{port}', connection_factory=lambda _: listener)
+    app = mavutil.mavlink_connection(f'udpout:127.0.0.1:{port}')
+    use_mavlink2(app, 1, 1)
+    thread = Thread(target=worker.run, daemon=True)
+    thread.start()
+    try:
+        deadline = monotonic() + 2
+        while monotonic() < deadline and not worker.flight.remote.valid:
+            app.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_QUADROTOR,
+                                   mavutil.mavlink.MAV_AUTOPILOT_GENERIC, 0, 0,
+                                   mavutil.mavlink.MAV_STATE_STANDBY, 3)
+            for name, value in (('ARM_MODE', 0.), ('ARM_VALID', 1.),
+                                ('MIS_READY', 1.), ('TAKEOFF_H', 10.), ('APP_MODE', 0.)):
+                app.mav.named_value_float_send(1000, name.encode(), value)
+            sleep(.03)
+        assert worker.flight.remote.valid
+        assert listener.peer == ('127.0.0.1', app.port.getsockname()[1])
+        assert app.recv_match(type='HEARTBEAT', blocking=True, timeout=1) is not None
+        worker.request_flight('arm')
+        command = app.recv_match(type='COMMAND_LONG', blocking=True, timeout=1)
+        assert command is not None and command.command == 400 and command.param1 == 1
+        app.mav.command_ack_send(400, mavutil.mavlink.MAV_RESULT_ACCEPTED, 0, 1, 255, 190)
+        deadline = monotonic() + 1
+        while monotonic() < deadline:
+            pending = worker.flight.pending
+            if pending is not None and pending['ack']:
+                break
+            sleep(.01)
+        assert worker.flight.pending is not None and worker.flight.pending['ack']
+    finally:
+        worker.request_stop()
+        thread.join(2)
+        app.close()
+        assert not thread.is_alive()
 
 
 def test_worker_maps_standard_mavlink_messages_to_updates():

@@ -41,7 +41,11 @@ def test_view_has_telemetry_and_parameters_tabs_and_renders_snapshot(application
         assert window.vertical_speed.vertical_speed_m_s == 1.25
         assert window.camera_frame.image is not None
         assert window.camera_frame.bbox == Bbox(True, 0., 0., 1., 1.)
-        assert window.image_mode.currentText() == 'Local'
+        assert window.image_mode.currentText() == 'Remote'
+        assert not window.image_mode.isEnabled()
+        assert not window.recording_panel.isEnabled()
+        assert not window.parameter_panel.isEnabled()
+        assert not window.reload_profile.isEnabled()
         assert window.roll.parentWidget().objectName() == 'attitude_summary'
         assert window.message_log.parentWidget().objectName() == 'status_panel'
         assert window.message_log.count() == 1
@@ -72,7 +76,7 @@ def test_view_enables_profile_reload_only_when_stopped(application):
         window.set_snapshot(TelemetrySnapshot(mission_stopped=False))
         assert not window.reload_profile.isEnabled()
         window.set_snapshot(TelemetrySnapshot(mission_stopped=True))
-        assert window.reload_profile.isEnabled()
+        assert not window.reload_profile.isEnabled()
     finally:
         window.close()
 

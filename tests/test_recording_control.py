@@ -123,7 +123,7 @@ def test_worker_queue_stop_priority_and_presenter_routing():
     from bullet_view.presenter import Presenter as RealPresenter
     c,mav,sent,_=setup();state(c,1.)
     worker=MavlinkWorker('test',clock=lambda:1.1)
-    worker.control_connection=SimpleNamespace(mav=mav)
+    worker.connection=SimpleNamespace(mav=mav)
     worker.recording=c
     worker.request_recording(True);worker.request_recording(False);worker._poll_recording()
     assert len(sent)==1 and sent[0][4]==0.
@@ -134,7 +134,7 @@ def test_worker_queue_stop_priority_and_presenter_routing():
     assert presenter.recording_snapshot==c.snapshot
 
 
-def test_closed_control_connection_disables_requests_even_with_telemetry():
+def test_closed_connection_disables_requests_even_with_telemetry():
     c,mav,_,_=setup();state(c,1.)
     c.offline();state(c,1.1)
     assert not c.snapshot.control_available
