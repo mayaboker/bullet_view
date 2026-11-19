@@ -34,4 +34,4 @@
 - [0022: Upstream telemetry rates](0022-upstream-telemetry-rates.md) — Show App-measured attitude and altitude rates and sustained-drop alerts; Implemented, tests passed; commit `dca2ee8`.
 - [0023: Manual target mission settings](0023-manual-target-settings.md) — Interim two-value settings design; Superseded by 0024; commit `4660e07`.
 - [0024: Target altitude slider](0024-target-altitude-slider.md) — Restore manual target height slider and fixed five-second hover; Implemented, 87 tests passed with one skip; commit `4660e07`.
-- [0025: SITL status from App heartbeat](0025-sitl-status.md) — Display App-confirmed Betaflight SITL identity; Implemented, 89 View tests and live heartbeat passed; commit Pending.
+- [0025: SITL status from App heartbeat](0025-sitl-status.md) — Display App-confirmed Betaflight SITL identity; Implemented, 89 View tests and live heartbeat passed; commit `c6256fc2f3c9e55eb0bb61d7b829ce22b82ba3a7`.

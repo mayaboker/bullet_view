@@ -8,4 +8,4 @@ Interface: App heartbeat custom_mode bit 0 is SITL_CONFIRMED. A clear bit means 
 
 Verification: Worker conversion, presenter staleness, and offscreen UI checks passed; the full View suite passed 89 tests with one skip. A live App-to-View-port heartbeat carried the SITL bit.
 
-Scope/defaults: Display only, no flight-control changes. Status: Implemented and verified. Implementation commit: Pending.
+Scope/defaults: Display only, no flight-control changes. Status: Implemented and verified. Implementation commit: `c6256fc2f3c9e55eb0bb61d7b829ce22b82ba3a7`.
