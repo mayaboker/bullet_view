@@ -10,4 +10,4 @@ Verification: focused flight-client and offscreen widget tests, then the View su
 
 Scope/defaults: height 0.1–100 m; hover 0.1–600 s; default target values 10 m and 10 s. No commit requested.
 
-Status: Implemented; 87 View tests passed with one skip. Implementation commit: Pending (no commit requested).
+Status: Superseded by [target altitude slider](0024-target-altitude-slider.md). The interim two-value settings design was implemented and tested before the height-only revision. Implementation commit: `4660e07`.

@@ -32,5 +32,5 @@
 - [0020: Named-monitor launch](0020-named-monitor-launch.md) — Place Bullet View in the lower half of the tmuxp stack's monitor; Implemented, offscreen and live checks passed; commits `78221c8949ba238bcfe0b1cd6aa2ef8187787bb6` (`bullet_view`), `3651d5bfff7d1ac0b92a36252ab1bc5bd7c9ce44` (`bullet_ng`).
 - [0021: Local camera and fid-matched bbox](0021-local-image-bbox.md) — Show local renderer frames and App-relayed detections; Implemented, tests and live smoke passed; commits `3b76b199fefc31d1d02e0efbe46d3cadd674a7c2` (`bullet_view`), `1ae98872366242be0ec6b1b156b31f8e3dcd149e` (`bullet_ng`).
 - [0022: Upstream telemetry rates](0022-upstream-telemetry-rates.md) — Show App-measured attitude and altitude rates and sustained-drop alerts; Implemented, tests passed; commit `dca2ee8`.
-- [0023: Manual target mission settings](0023-manual-target-settings.md) — Apply height and hover time in manual target-hit before Start; Implemented, 87 tests passed with one skip; commit Pending (no commit requested).
-- [0024: Target altitude slider](0024-target-altitude-slider.md) — Restore manual target height slider and fixed five-second hover; Implemented, 87 tests passed with one skip; commit Pending (no commit requested).
+- [0023: Manual target mission settings](0023-manual-target-settings.md) — Interim two-value settings design; Superseded by 0024; commit `4660e07`.
+- [0024: Target altitude slider](0024-target-altitude-slider.md) — Restore manual target height slider and fixed five-second hover; Implemented, 87 tests passed with one skip; commit `4660e07`.

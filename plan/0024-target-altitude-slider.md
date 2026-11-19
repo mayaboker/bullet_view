@@ -10,4 +10,4 @@ Verification: offscreen slider synchronization, zero guard, command feedback, an
 
 Scope/defaults: manual target-hit only; other missions retain their profile settings. No commit requested.
 
-Status: Implemented; 87 View tests passed with one skip. Implementation commit: Pending (no commit requested).
+Status: Implemented; 87 View tests passed with one skip. Implementation commit: `4660e07`.
