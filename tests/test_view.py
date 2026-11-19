@@ -28,7 +28,7 @@ def test_view_has_telemetry_and_parameters_tabs_and_renders_snapshot(application
     window = MainWindow(presenter)
     try:
         snapshot = TelemetrySnapshot(attitude=Attitude(.1, .2, .3, 10), altitude=Altitude(4., 20),
-                                     vertical_speed_m_s=1.25,
+                                     vertical_speed_m_s=1.25, attitude_hz=49.2, altitude_hz=47.8,
                                      image=ImageFrame(2, 2, 'rgb8', bytes(12), 1, 2),
                                      bbox=Bbox(True, 0., 0., 1., 1.),
                                      messages=(StatusText(1, 6, '[01] ready', 1.),))
@@ -39,6 +39,8 @@ def test_view_has_telemetry_and_parameters_tabs_and_renders_snapshot(application
         assert '+17.2°' in window.yaw.text()
         assert window.altitude.altitude_m == 4.
         assert window.vertical_speed.vertical_speed_m_s == 1.25
+        assert 'ATTITUDE 49.2 Hz' in window.upstream_rates.text()
+        assert 'ALTITUDE 47.8 Hz' in window.upstream_rates.text()
         assert window.camera_frame.image is not None
         assert window.camera_frame.bbox == Bbox(True, 0., 0., 1., 1.)
         assert window.image_mode.currentText() == 'Remote'

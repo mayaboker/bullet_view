@@ -366,6 +366,9 @@ class MainWindow(QtWidgets.QMainWindow):
         for label in (self.roll, self.pitch, self.yaw):
             attitude_row.addWidget(label, 1)
         attitude_layout.addLayout(attitude_row)
+        self.upstream_rates = QtWidgets.QLabel('SITL rates · ATTITUDE — · ALTITUDE —')
+        self.upstream_rates.setAccessibleName('Upstream SITL telemetry rates')
+        attitude_layout.addWidget(self.upstream_rates)
         attitude_layout.addStretch(1)
         lower.addWidget(attitude_panel, 1)
         message_panel = QtWidgets.QFrame()
@@ -426,6 +429,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.vertical_speed.set_vertical_speed(snapshot.vertical_speed_m_s)
         self.rangefinder.set_rangefinder(snapshot.rangefinder)
         self.camera_frame.set_frame(snapshot.image, snapshot.bbox)
+        attitude_rate = '—' if snapshot.attitude_hz is None else f'{snapshot.attitude_hz:.1f} Hz'
+        altitude_rate = '—' if snapshot.altitude_hz is None else f'{snapshot.altitude_hz:.1f} Hz'
+        self.upstream_rates.setText(f'SITL rates · ATTITUDE {attitude_rate} · ALTITUDE {altitude_rate}')
         if len(snapshot.messages) < self._message_count:
             self._clear_message_log()
         scroll_position = self.message_log.verticalScrollBar().value()

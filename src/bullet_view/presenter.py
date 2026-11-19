@@ -244,6 +244,9 @@ class Presenter(QtCore.QObject):
             values['rangefinder'] = update.value
         elif update.kind == 'STATUSTEXT':
             values['messages'] = self.snapshot.messages + (update.value,)
+        elif update.kind == 'RATE':
+            name, hz = update.value
+            values['attitude_hz' if name == 'ATT_HZ' else 'altitude_hz'] = hz
         elif update.kind == 'BBOX':
             if self.matcher is not None and update.value.fid is not None:
                 result = self.matcher.add_bbox(update.value, update.received_at_s)
@@ -257,7 +260,8 @@ class Presenter(QtCore.QObject):
     @QtCore.Slot(str)
     def _on_failure(self, message):
         self.vertical_speed.reset()
-        self.snapshot = replace(self.snapshot, connected=False, error=message, rangefinder=None)
+        self.snapshot = replace(self.snapshot, connected=False, error=message, rangefinder=None,
+                                attitude_hz=None, altitude_hz=None)
         self._set_status('Disconnected: ' + message)
         self.snapshot_changed.emit(self.snapshot)
 
@@ -272,7 +276,8 @@ class Presenter(QtCore.QObject):
         age = self.clock() - self.snapshot.last_message_at_s
         if age > STALE_AFTER_S and self.snapshot.connected:
             self.vertical_speed.reset()
-            self.snapshot = replace(self.snapshot, connected=False, vertical_speed_m_s=None, rangefinder=None)
+            self.snapshot = replace(self.snapshot, connected=False, vertical_speed_m_s=None, rangefinder=None,
+                                    attitude_hz=None, altitude_hz=None)
             self._set_status('Telemetry stale')
             self.snapshot_changed.emit(self.snapshot)
 

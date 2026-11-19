@@ -127,6 +127,36 @@ def test_worker_maps_status_text_and_index():
     assert updates[0].value.text == '[07] warning'
 
 
+def test_worker_accepts_upstream_rates_only_from_app():
+    class RateMessage(Message):
+        def __init__(self, name, value, source=(1, 1)):
+            super().__init__('NAMED_VALUE_FLOAT', name=name.encode(), value=value)
+            self.source = source
+
+        def get_srcSystem(self):
+            return self.source[0]
+
+        def get_srcComponent(self):
+            return self.source[1]
+
+    worker = MavlinkWorker('test')
+    updates = []
+    worker.update.connect(updates.append)
+    worker._emit_message(RateMessage('ATT_HZ', 49.5), 1.)
+    worker._emit_message(RateMessage('ALT_HZ', 48.0), 1.)
+    worker._emit_message(RateMessage('ATT_HZ', 20., (9, 9)), 1.)
+    assert [(update.kind, update.value) for update in updates] == [
+        ('RATE', ('ATT_HZ', 49.5)), ('RATE', ('ALT_HZ', 48.0))]
+
+
+def test_presenter_keeps_upstream_rates_in_snapshot():
+    presenter = Presenter('test')
+    presenter._on_update(TelemetryUpdate('RATE', ('ATT_HZ', 49.5), 1.))
+    presenter._on_update(TelemetryUpdate('RATE', ('ALT_HZ', 48.), 1.))
+    assert presenter.snapshot.attitude_hz == 49.5
+    assert presenter.snapshot.altitude_hz == 48.
+
+
 def test_worker_reassembles_bbox_named_values():
     worker = MavlinkWorker('test')
     updates = []

@@ -83,6 +83,8 @@ class TelemetrySnapshot:
     rangefinder: Rangefinder | None = None
     error: str | None = None
     vertical_speed_m_s: float | None = None
+    attitude_hz: float | None = None
+    altitude_hz: float | None = None
     messages: tuple[StatusText, ...] = ()
     heartbeat: Heartbeat | None = None
     mission_stopped: bool = False

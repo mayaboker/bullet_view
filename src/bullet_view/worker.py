@@ -23,6 +23,7 @@ RECEIVE_TIMEOUT_S = .01
 GCS_HEARTBEAT_PERIOD_S = 1.0
 PARAMETER_COMMAND_CAPACITY = 64
 BBOX_NAMES = {'BBOX_VALID', 'BBOX_X', 'BBOX_Y', 'BBOX_W', 'BBOX_H'}
+RATE_NAMES = {'ATT_HZ', 'ALT_HZ'}
 
 
 class MavlinkWorker(QtCore.QObject):
@@ -216,6 +217,11 @@ class MavlinkWorker(QtCore.QObject):
         elif kind == 'NAMED_VALUE_FLOAT':
             raw_name = message.name.decode('ascii', errors='ignore') if isinstance(message.name, bytes) else message.name
             name = str(raw_name).rstrip('\0')
+            if name in RATE_NAMES:
+                if ((message.get_srcSystem(), message.get_srcComponent()) == APP_TARGET
+                        and isfinite(float(message.value)) and float(message.value) >= 0):
+                    self.update.emit(TelemetryUpdate('RATE', (name, float(message.value)), received_at_s))
+                return
             if name in FLIGHT_NAMES or name in ('APP_MODE', 'APP_PHASE', 'APP_MSN', 'APP_RESULT', 'VIS_READY'):
                 self.flight.named(message, name, received_at_s)
                 return
