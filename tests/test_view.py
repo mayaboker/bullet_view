@@ -41,6 +41,7 @@ def test_view_has_telemetry_and_parameters_tabs_and_renders_snapshot(application
         assert window.vertical_speed.vertical_speed_m_s == 1.25
         assert 'ATTITUDE 49.2 Hz' in window.upstream_rates.text()
         assert 'ALTITUDE 47.8 Hz' in window.upstream_rates.text()
+        assert window.sitl_status.text() == 'SITL status unknown'
         assert window.camera_frame.image is not None
         assert window.camera_frame.bbox == Bbox(True, 0., 0., 1., 1.)
         assert window.image_mode.currentText() == 'Remote'
@@ -54,6 +55,21 @@ def test_view_has_telemetry_and_parameters_tabs_and_renders_snapshot(application
         assert window.message_log.item(0).text() == '[— s | frame —] ready'
         window.message_log.itemClicked.emit(window.message_log.item(0))
         assert 'waiting for the application to report readiness' in window.message_details.text()
+    finally:
+        window.close()
+
+
+def test_view_shows_sitl_confirmation_states(application):
+    window = MainWindow(FakePresenter())
+    try:
+        for confirmed, expected, rate_source, color in (
+                (None, 'SITL status unknown', 'Telemetry', '#9bb0c8'),
+                (True, 'SITL confirmed', 'SITL', '#ef6b73'),
+                (False, 'SITL not confirmed', 'HW', '#70d6ad')):
+            window.set_snapshot(TelemetrySnapshot(sitl_confirmed=confirmed))
+            assert window.sitl_status.text() == expected
+            assert window.upstream_rates.text().startswith(f'{rate_source} rates')
+            assert color in window.upstream_rates.styleSheet()
     finally:
         window.close()
 

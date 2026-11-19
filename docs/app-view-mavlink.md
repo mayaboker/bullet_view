@@ -36,7 +36,7 @@ on the local UDP link, not authentication.
 
 | Direction | Message | When sent | Meaning |
 | --- | --- | --- | --- |
-| App → View, port 14550 | `HEARTBEAT` | About 1 Hz | Quadrotor heartbeat with firmware armed flag and App standby/active status. |
+| App → View, port 14550 | `HEARTBEAT` | About 1 Hz | Quadrotor heartbeat with firmware armed flag, App standby/active status, and `custom_mode` bit 0 set when App confirmed the MSP board identifier is `SITL` at startup. A clear bit means not confirmed. |
 | App → View, port 14550 | `NAMED_VALUE_FLOAT` | Ten values about 10 times/s | Armed state, validity, readiness, height, hover duration, App mode, selected mission, phase, result, and detector readiness; see below. |
 | App → View, port 14550 | `ATTITUDE` | Up to 20 Hz while SITL attitude is fresh | Roll, pitch, yaw, and angular rates relayed from SITL. |
 | App → View, port 14550 | `ALTITUDE` | Up to 20 Hz while SITL `VFR_HUD` altitude is fresh | `altitude_local` in metres relative to the mission ground datum; other altitude fields are `NaN`. |

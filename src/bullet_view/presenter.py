@@ -14,6 +14,8 @@ from .recording_control import RecordingSnapshot
 
 
 STALE_AFTER_S = .75
+HEARTBEAT_STALE_S = 3.0
+SITL_CONFIRMED_CUSTOM_MODE = 1 << 0
 VIEW_REFRESH_PERIOD_MS = 100
 VERTICAL_SPEED_FILTER_ALPHA = .25
 VERTICAL_SPEED_RESET_GAP_S = 1.
@@ -232,6 +234,8 @@ class Presenter(QtCore.QObject):
         if update.kind == 'HEARTBEAT':
             values['heartbeat_at_s'] = update.received_at_s
             values['heartbeat'] = update.value
+            values['sitl_confirmed'] = (None if update.value is None else
+                                        bool(update.value.custom_mode & SITL_CONFIRMED_CUSTOM_MODE))
             values['mission_stopped'] = (update.value is not None
                                           and update.value.system_status != mavutil.mavlink.MAV_STATE_ACTIVE)
         elif update.kind == 'ATTITUDE':
@@ -261,11 +265,15 @@ class Presenter(QtCore.QObject):
     def _on_failure(self, message):
         self.vertical_speed.reset()
         self.snapshot = replace(self.snapshot, connected=False, error=message, rangefinder=None,
-                                attitude_hz=None, altitude_hz=None)
+                                attitude_hz=None, altitude_hz=None, sitl_confirmed=None)
         self._set_status('Disconnected: ' + message)
         self.snapshot_changed.emit(self.snapshot)
 
     def _refresh_freshness(self):
+        if (self.snapshot.sitl_confirmed is not None and self.snapshot.heartbeat_at_s is not None
+                and self.clock() - self.snapshot.heartbeat_at_s > HEARTBEAT_STALE_S):
+            self.snapshot = replace(self.snapshot, sitl_confirmed=None)
+            self.snapshot_changed.emit(self.snapshot)
         if self.matcher is not None:
             result = self.matcher.fallback(self.clock())
             if result is not None:
@@ -277,7 +285,7 @@ class Presenter(QtCore.QObject):
         if age > STALE_AFTER_S and self.snapshot.connected:
             self.vertical_speed.reset()
             self.snapshot = replace(self.snapshot, connected=False, vertical_speed_m_s=None, rangefinder=None,
-                                    attitude_hz=None, altitude_hz=None)
+                                    attitude_hz=None, altitude_hz=None, sitl_confirmed=None)
             self._set_status('Telemetry stale')
             self.snapshot_changed.emit(self.snapshot)
 

@@ -30,6 +30,7 @@ SEVERITY_COLORS = {
     MAV_SEVERITY_ERROR: '#ef6b73',
     2: '#ff5b7f',
 }
+RATE_SOURCE_COLORS = {None: '#9bb0c8', True: '#ef6b73', False: '#70d6ad'}
 
 
 class FlightBall(QtWidgets.QWidget):
@@ -366,9 +367,12 @@ class MainWindow(QtWidgets.QMainWindow):
         for label in (self.roll, self.pitch, self.yaw):
             attitude_row.addWidget(label, 1)
         attitude_layout.addLayout(attitude_row)
-        self.upstream_rates = QtWidgets.QLabel('SITL rates · ATTITUDE — · ALTITUDE —')
-        self.upstream_rates.setAccessibleName('Upstream SITL telemetry rates')
+        self.upstream_rates = QtWidgets.QLabel('Telemetry rates · ATTITUDE — · ALTITUDE —')
+        self.upstream_rates.setAccessibleName('Upstream telemetry rates')
         attitude_layout.addWidget(self.upstream_rates)
+        self.sitl_status = QtWidgets.QLabel('SITL status unknown')
+        self.sitl_status.setAccessibleName('Betaflight SITL confirmation')
+        attitude_layout.addWidget(self.sitl_status)
         attitude_layout.addStretch(1)
         lower.addWidget(attitude_panel, 1)
         message_panel = QtWidgets.QFrame()
@@ -431,7 +435,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.camera_frame.set_frame(snapshot.image, snapshot.bbox)
         attitude_rate = '—' if snapshot.attitude_hz is None else f'{snapshot.attitude_hz:.1f} Hz'
         altitude_rate = '—' if snapshot.altitude_hz is None else f'{snapshot.altitude_hz:.1f} Hz'
-        self.upstream_rates.setText(f'SITL rates · ATTITUDE {attitude_rate} · ALTITUDE {altitude_rate}')
+        rate_source = ('Telemetry' if snapshot.sitl_confirmed is None else
+                       'SITL' if snapshot.sitl_confirmed else 'HW')
+        self.upstream_rates.setText(f'{rate_source} rates · ATTITUDE {attitude_rate} · ALTITUDE {altitude_rate}')
+        self.upstream_rates.setStyleSheet(f'color: {RATE_SOURCE_COLORS[snapshot.sitl_confirmed]};')
+        sitl_text = ('SITL status unknown' if snapshot.sitl_confirmed is None else
+                     'SITL confirmed' if snapshot.sitl_confirmed else 'SITL not confirmed')
+        self.sitl_status.setText(sitl_text)
         if len(snapshot.messages) < self._message_count:
             self._clear_message_log()
         scroll_position = self.message_log.verticalScrollBar().value()

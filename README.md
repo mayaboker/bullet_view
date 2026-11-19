@@ -7,6 +7,11 @@ receives command ACKs there. It does not connect to Betaflight SITL. With
 `--image-endpoint`, it subscribes directly to the local renderer camera;
 parameter and recording controls remain unavailable.
 
+View shows **SITL confirmed** when App's startup MSP board-info query returned
+`SITL`, **SITL not confirmed** when it did not, and **SITL status unknown**
+without a fresh App heartbeat. This reports firmware identity, not whether the
+physics simulator is exchanging data.
+
 ## Run
 
 Start the Bullet Drone SITL launcher, then `bullet-app --mode auto` or

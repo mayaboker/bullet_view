@@ -198,6 +198,7 @@ class MavlinkWorker(QtCore.QObject):
         kind = message.get_type()
         if kind == 'HEARTBEAT':
             value = Heartbeat(getattr(message, 'base_mode', 0),
+                              getattr(message, 'custom_mode', 0),
                               getattr(message, 'system_status', 0), received_at_s)
         elif kind == 'ATTITUDE':
             value = Attitude(message.roll, message.pitch, message.yaw, message.time_boot_ms)
