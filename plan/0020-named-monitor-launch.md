@@ -1,7 +1,7 @@
 # Named-monitor launch
 
 Status: Implemented; offscreen and live checks passed
-Implementation commit: Pending
+Implementation commits: `78221c8949ba238bcfe0b1cd6aa2ef8187787bb6` (`bullet_view`), `3651d5bfff7d1ac0b92a36252ab1bc5bd7c9ce44` (`bullet_ng`)
 
 Goal: Let the tmuxp hover/land stack place Bullet View in the bottom half of the same display as Godot.
 
