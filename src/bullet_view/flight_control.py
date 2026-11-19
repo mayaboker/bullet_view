@@ -13,7 +13,7 @@ LAND_COMMAND = 21
 VIEW_ACTION_IDS = {**ACTION_IDS, 'land': 6}
 PHASE_NAMES = ('prearm', 'disarmed', 'arming', 'armed', 'takeoff', 'hover', 'land',
                'disarming', 'fault', 'search', 'center', 'settle', 'los', 'commit')
-MISSION_NAMES = {0.: 'manual', 1.: 'hover-land', 2.: 'target-hit'}
+MISSION_NAMES = {1.: 'hover-land', 2.: 'target-hit'}
 RESULT_NAMES = {0.: 'pending', 1.: 'hit', 2.: 'failed'}
 
 
@@ -44,14 +44,14 @@ def flight_action_block_reason(snapshot, action, height_m=None, *, now=None):
         return f'Waiting for {snapshot.pending} confirmation'
     if snapshot.mission == 'target-hit' and snapshot.mission_result != 'pending' and action in ('arm', 'start'):
         return 'Target mission completed; restart App and launcher'
-    if action == 'start' and snapshot.mission == 'target-hit' and not snapshot.vision_ready:
-        return 'Waiting for live target detector'
     if remote.readiness == RESET_REQUIRED:
         return 'Stop/reset required before arming'
     if remote.readiness == FLYING and action != 'land':
         return 'Mission already active'
     if snapshot.mode not in ('auto', 'manual'):
         return 'Waiting for App mode'
+    if action in ('arm', 'start') and snapshot.mode == 'auto':
+        return 'App starts this mission automatically'
     if action == 'arm':
         if remote.armed is not False:
             return 'Vehicle is already armed'
@@ -60,15 +60,13 @@ def flight_action_block_reason(snapshot, action, height_m=None, *, now=None):
     elif action == 'start':
         if remote.armed is not True or remote.readiness != ARMED_IDLE:
             return 'Arm and wait for confirmed armed idle'
-        for value in (remote.height_m, height_m):
-            if (type(value) not in (float, int) or not isfinite(value)
-                    or not MIN_TAKEOFF_HEIGHT_M <= value <= MAX_TAKEOFF_HEIGHT_M):
-                return 'Apply a valid takeoff height first'
-        if abs(remote.height_m - height_m) > HEIGHT_TOLERANCE_M:
-            return 'Apply the edited takeoff height first'
+        if (type(remote.height_m) not in (float, int) or not isfinite(remote.height_m)
+                or not MIN_TAKEOFF_HEIGHT_M <= remote.height_m <= MAX_TAKEOFF_HEIGHT_M):
+            return 'Mission profile has an invalid height'
     elif action == 'land':
-        if snapshot.mode != 'manual' or remote.readiness != FLYING or snapshot.phase not in ('takeoff', 'hover'):
-            return 'Manual takeoff or hover required to land'
+        if remote.readiness != FLYING or snapshot.phase not in ('takeoff', 'hover', 'search',
+                                                                 'center', 'settle', 'los', 'commit'):
+            return 'Active flight required to land'
     else:
         raise ValueError('Unknown flight availability action')
     return None
@@ -166,10 +164,8 @@ class FlightClient:
         remote = self.remote
         if not disarm and (not remote.valid or now - remote.received_at_s > STATE_STALE_S):
             raise ValueError('Fresh remote flight state required')
-        if action == 'height' and remote.readiness not in (DISARMED_IDLE, ARMED_IDLE):
-            raise ValueError('Height is locked')
-        if action == 'height' and self.mode != 'manual':
-            raise ValueError('Height is editable only in Manual mode')
+        if action == 'height':
+            raise ValueError('Height is fixed by the mission profile')
         if action == 'disarm' and (not remote.valid or remote.readiness == FLYING):
             raise ValueError('Emergency confirmation required')
         command = (TAKEOFF_HEIGHT_COMMAND if action == 'height' else

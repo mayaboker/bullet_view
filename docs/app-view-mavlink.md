@@ -37,13 +37,14 @@ on the local UDP link, not authentication.
 | App → View, port 14550 | `ALTITUDE` | Up to 20 Hz while SITL `VFR_HUD` altitude is fresh | `altitude_local` in metres relative to the mission ground datum; other altitude fields are `NaN`. |
 | App → View, port 14550 | `STATUSTEXT` | On phase/result changes or a denied command | Phase, result, fault, or command-denial reason. |
 | View → App, reply on same socket | `HEARTBEAT` | About 1 Hz after the first valid App packet | Identifies View as a ground station and keeps its control link alive. |
-| View → App, reply on same socket | `COMMAND_LONG` | When an operator requests a flight action | Arm, disarm, emergency disarm, start/takeoff, set height, or land. |
+| View → App, reply on same socket | `COMMAND_LONG` | When an operator requests a flight action | Arm, disarm, emergency disarm, start, or land. The legacy set-height command is denied. |
 | App → View, port 14550 | `COMMAND_ACK` | Once per addressed `COMMAND_LONG` processed | `MAV_RESULT_ACCEPTED` or `MAV_RESULT_DENIED`, addressed to View `255/190`. |
 
 App considers View disconnected if its last View `HEARTBEAT` is more than
 3 seconds old. It denies commands while that heartbeat is stale. During an
-active flight, loss of View heartbeat causes App to disarm on the ground or
-enter landing when airborne. View also requires fresh App flight state before
+manually approved flight, loss of View heartbeat causes App to disarm on the ground or
+enter landing when airborne. Automatic approval requires no View connection.
+View also requires fresh App flight state before
 enabling ordinary flight actions.
 
 ## `NAMED_VALUE_FLOAT` state
@@ -56,12 +57,12 @@ the four core flight fields into one state snapshot.
 | `ARM_MODE` | `0` disarmed, `1` armed, as reported by SITL firmware. |
 | `ARM_VALID` | `1` if App has received a SITL heartbeat within 3 seconds; otherwise `0`. |
 | `MIS_READY` | `0` unavailable/prearm or transition, `1` disarmed idle, `2` armed idle, `3` flying, `4` fault/reset required. |
-| `TAKEOFF_H` | Requested takeoff height in metres above the launch datum. Auto mode uses 10 m; manual mode can set 0.1–100 m in 0.1 m steps. |
-| `APP_MODE` | `0` auto, `1` manual. Mode is selected when App starts. |
+| `TAKEOFF_H` | Mission-profile takeoff height in metres above launch; hover/land defaults to 20 m. View displays it read-only. |
+| `APP_MODE` | `0` automatic approval, `1` manual View approval. Mode is selected when App starts. |
 | `APP_PHASE` | `0` prearm, `1` disarmed, `2` arming, `3` armed, `4` takeoff, `5` hover, `6` land, `7` disarming, `8` fault, `9` search, `10` center, `11` settle, `12` LOS, `13` commit. |
-| `APP_MSN` | `0` manual, `1` hover-land, `2` target-hit. MAVLink named-value names are limited to 10 bytes. |
+| `APP_MSN` | `1` hover-land, `2` target-hit. MAVLink named-value names are limited to 10 bytes. |
 | `APP_RESULT` | `0` pending, `1` hit, `2` failed; `STATUSTEXT` gives the failure reason. |
-| `VIS_READY` | `1` when a recent detector result is available, including a no-target result; otherwise `0`. View disables target mission Start when this is `0`. |
+| `VIS_READY` | `1` when a recent detector result is available, including a no-target result; otherwise `0`. Informational during startup; target search uses Visual after hover. |
 
 View uses `ARM_MODE`, `ARM_VALID`, `MIS_READY`, and `TAKEOFF_H` together as its
 flight state. It also displays `APP_MODE`, `APP_MSN`, `APP_PHASE`, and `APP_RESULT`. If the assembled
@@ -75,12 +76,12 @@ zero. App rejects non-finite or unsupported parameter combinations.
 
 | View action | MAVLink command ID | Parameters | App constraint |
 | --- | ---: | --- | --- |
-| Arm | `400` (`MAV_CMD_COMPONENT_ARM_DISARM`) | `param1=1` | App must be disarmed and ready. |
+| Arm | `400` (`MAV_CMD_COMPONENT_ARM_DISARM`) | `param1=1` | Manual approval mode; App must be disarmed and ready. |
 | Disarm | `400` | `param1=0`, `param2=0` | Normal disarm is for the ground/armed idle state. |
 | Emergency disarm | `400` | `param1=0`, `param2=21196` | Enters App fault and stops normal flight control. |
-| Start auto mission or manual takeoff | `300` (`MAV_CMD_MISSION_START`) | All zero | Confirmed armed state and fresh altitude are required; target-hit also requires a live detector. |
-| Set manual takeoff height | `31012` | `param1=height_m` | Manual mode and disarmed/armed idle; 0.1–100 m in 0.1 m steps. |
-| Land | `21` (`MAV_CMD_NAV_LAND`) | All zero | Manual mode during takeoff or hover. Auto mode lands on its own after the hover period. |
+| Start selected mission | `300` (`MAV_CMD_MISSION_START`) | All zero | Manual approval mode with confirmed arm and fresh altitude; no preflight Visual requirement. |
+| Set takeoff height (legacy) | `31012` | `param1=height_m` | Denied; mission profile fixes the height at startup. |
+| Land | `21` (`MAV_CMD_NAV_LAND`) | All zero | Abort an active flight in either approval mode. |
 
 App sends `COMMAND_ACK` with the original command ID and an accepted or denied
 result. Its `result_param2` identifies the action: `1` arm, `2` disarm, `3`
@@ -107,7 +108,7 @@ App–View MAVLink exchange described above.
 ## Implementation references
 
 - App endpoints, command validation, ACKs, and telemetry: `bullet_app/src/bullet_app/view_link.py`
-- App flight states and request constraints: `bullet_app/src/bullet_app/flight.py`
+- App flight states and request constraints: `bullet_app/src/bullet_app/missions/base.py`
 - App SITL connections and control loop: `bullet_app/src/bullet_app/mission.py`
 - View endpoints: `bullet_view/src/bullet_view/main.py`
 - View send/receive loop: `bullet_view/src/bullet_view/worker.py`

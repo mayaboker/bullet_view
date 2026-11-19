@@ -27,19 +27,22 @@ The App–View MAVLink messages, commands, and port layout are documented in
 
 ## Flight controls
 
-- **Auto:** Wait for the app's disarmed ready state, click **Arm**, then
-  **Start auto mission**. The app climbs 10 m above launch, holds for 10
-  continuous seconds, lands, and disarms.
-- **Manual:** Apply a takeoff height from 0.1 to 100 m in 0.1 m steps, click
-  **Arm**, then **Takeoff**. The app holds the selected height until **Land**
-  is clicked, then lands and disarms.
+- **Manual approval:** Wait for the app's disarmed ready state, click **Arm**,
+  then **Start hover mission** or **Start target mission**. The selected
+  mission runs its startup profile. The hover/land default is 20 m above
+  launch for 10 continuous seconds before landing.
+- **Automatic approval:** App arms and starts one selected mission after SITL
+  is ready, without waiting for View. View displays progress if connected.
+- The mission profile sets the takeoff height. View displays it read-only.
+  **Land** can abort an active flight.
 - **Disarm** works on the ground. During flight it asks for emergency
   confirmation, because it immediately stops the motors.
 
 Buttons wait for an app acknowledgment and matching observed flight state.
-The app remains running after a normal landing, ready for another flight.
-If View disconnects for more than 3 seconds, the app disarms on the ground
-or lands if airborne. The app reports a fault when SITL telemetry becomes
+In manual approval mode, App remains running after a normal landing, ready
+for another flight. If View disconnects for more than 3 seconds, App disarms
+on the ground or lands if airborne. Automatic mode requires no View connection
+and exits after the flight. The app reports a fault when SITL telemetry becomes
 stale; restart it before flying again.
 
 The dashboard shows app-relayed attitude and altitude, vertical speed,

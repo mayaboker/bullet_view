@@ -33,21 +33,13 @@ def client():
     return c, mav, outputs, sent
 
 
-def test_height_requires_ack_and_matching_readback_even_if_readback_first():
+def test_height_is_set_by_mission_profile():
     c, mav, outputs, sent = client()
     assert c.remote.height_m is None
     state(c, 1.)
-    c.request('height', 5.5, mav, 1.1)
-    assert sent[-1][2] == 31012 and sent[-1][4] == 5.5
-    c.ack(ack(31012, 'height'), 1.2)
-    assert c.pending is not None
-    state(c, 1.3, height=5.5)
-    assert c.pending is None and c.remote.height_m == 5.5
-    c.request('height', 6., mav, 1.4)
-    state(c, 1.5, height=6.)
-    assert c.pending is not None
-    c.ack(ack(31012, 'height'), 1.6)
-    assert c.pending is None
+    with pytest.raises(ValueError, match='mission profile'):
+        c.request('height', 5.5, mav, 1.1)
+    assert sent == [] and c.remote.height_m == 20.
 
 
 def test_wrong_target_wrong_command_late_arm_ack_and_disarm_preemption():
@@ -84,8 +76,7 @@ def test_start_and_airborne_height_guards():
     state(c,1.)
     with pytest.raises(ValueError): c.request('start',20.,mav,1.)
     state(c,1.1,True,5.5,ARMED_IDLE)
-    with pytest.raises(ValueError): c.request('start',20.,mav,1.1)
-    c.request('start',5.5,mav,1.1)
+    c.request('start',None,mav,1.1)
     c.ack(ack(300,'start'),1.2)
     state(c,1.3,True,5.5,FLYING)
     assert c.pending is None
@@ -101,7 +92,7 @@ def test_target_mission_status_and_single_attempt_gate():
     assert c.snapshot().mission == 'target-hit'
     assert c.snapshot().phase == 'search'
     state(c, 1.1, True, 10., ARMED_IDLE)
-    assert flight_action_block_reason(c.snapshot(), 'start', 10., now=1.1) == 'Waiting for live target detector'
+    assert flight_action_block_reason(c.snapshot(), 'start', now=1.1) is None
     c.named(packet(time_boot_ms=1100, value=1.), 'VIS_READY', 1.1)
     assert flight_action_block_reason(c.snapshot(), 'start', 10., now=1.1) is None
     c.named(packet(time_boot_ms=1000, value=1.), 'APP_RESULT', 1.)
@@ -124,6 +115,19 @@ def test_manual_land_requires_ack_and_observed_landing_phase():
     assert c.pending is None
 
 
+def test_auto_mode_blocks_arm_but_allows_active_target_abort():
+    c, mav, _, sent = client()
+    state(c, 1.)
+    c.named(packet(time_boot_ms=1000, value=0.), 'APP_MODE', 1.)
+    with pytest.raises(ValueError, match='automatically'):
+        c.request('arm', None, mav, 1.1)
+    state(c, 1.2, True, 10., FLYING)
+    c.named(packet(time_boot_ms=1200, value=0.), 'APP_MODE', 1.2)
+    c.named(packet(time_boot_ms=1200, value=9.), 'APP_PHASE', 1.2)
+    c.request('land', None, mav, 1.3)
+    assert sent[-1][2] == 21
+
+
 class Presenter(QtCore.QObject):
     flight_changed = QtCore.Signal(object)
     def __init__(self):
@@ -131,27 +135,21 @@ class Presenter(QtCore.QObject):
     def request_flight(self,*args): self.requests.append(args)
 
 
-def test_panel_slider_editor_unknown_pending_and_cancel(monkeypatch):
+def test_panel_shows_profile_height_and_keeps_abort_controls(monkeypatch):
     app=QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     p=Presenter(); panel=FlightPanel(p)
     assert 'unknown' in panel.state_label.text() and not panel.arm.isEnabled()
     panel.set_snapshot(FlightSnapshot(FlightState(False,True,DISARMED_IDLE,20.,1.,(1,1))))
     assert panel.arm.isEnabled() and not panel.disarm.isEnabled()
-    panel.slider.setValue(55)
-    assert panel.height.value()==5.5
-    panel.height.setValue(6.)
-    assert panel.slider.value()==60
-    panel.apply.click()
-    assert p.requests==[('height',6.)]
+    assert panel.height.value() == 20. and panel.height.isReadOnly()
+    assert not panel.height.isEnabled()
     panel.set_snapshot(FlightSnapshot(FlightState(False,True,DISARMED_IDLE,20.,1.,(1,1)), pending='arm'))
     assert not panel.arm.isEnabled() and panel.disarm.isEnabled()
     monkeypatch.setattr(QtWidgets.QMessageBox, 'warning',
                         lambda *args: QtWidgets.QMessageBox.StandardButton.Cancel)
     panel.disarm.click()
-    assert p.requests==[('height',6.)]
+    assert p.requests==[]
     panel.set_snapshot(FlightSnapshot(FlightState(True,True,ARMED_IDLE,5.5,1.,(1,1))))
-    assert not panel.start.isEnabled()
-    panel.height.setValue(5.5)
     assert panel.start.isEnabled()
     panel.set_snapshot(FlightSnapshot(panel.snapshot.remote,'height'))
     assert not panel.start.isEnabled() and panel.disarm.isEnabled()
@@ -163,7 +161,7 @@ def test_panel_slider_editor_unknown_pending_and_cancel(monkeypatch):
         return QtWidgets.QMessageBox.StandardButton.Cancel
     monkeypatch.setattr(QtWidgets.QMessageBox,'warning',cancel)
     panel.disarm.click()
-    assert len(p.requests)==1 and calls[0][-1]==QtWidgets.QMessageBox.StandardButton.Cancel
+    assert len(p.requests)==0 and calls[0][-1]==QtWidgets.QMessageBox.StandardButton.Cancel
     monkeypatch.setattr(QtWidgets.QMessageBox,'warning',lambda *args:QtWidgets.QMessageBox.StandardButton.Yes)
     panel.disarm.click()
     assert p.requests[-1]==('emergency',)
@@ -172,11 +170,10 @@ def test_panel_slider_editor_unknown_pending_and_cancel(monkeypatch):
     assert panel.land.isEnabled()
     panel.land.click()
     assert p.requests[-1]==('land',)
-    panel.height.setValue(10.)
     panel.set_snapshot(FlightSnapshot(FlightState(True,True,ARMED_IDLE,10.,1.,(1,1)),
                                       mode='auto', phase='armed'))
-    assert panel.start.isEnabled() and panel.start.text() == 'Start auto mission'
-    assert not panel.height.isEnabled() and not panel.apply.isEnabled() and not panel.land.isEnabled()
+    assert not panel.start.isEnabled() and panel.start.text() == 'Start hover mission'
+    assert not panel.height.isEnabled() and not panel.land.isEnabled()
     panel.close()
 
 

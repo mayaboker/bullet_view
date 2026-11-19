@@ -28,3 +28,4 @@
 
 - [0017: Single-port Bullet App link](0017-single-port-app-link.md) — Use one UDP socket for App telemetry, View commands, and ACKs; Implemented and verified; commit Pending.
 - [0018: Target mission status](0018-target-mission-status.md) — Show target mission, phase and result; Pending, focused tests passed; commit Pending.
+- [0019: Mission approval controls](0019-mission-approval-controls.md) — Show configured height and gate Arm/Start by approval mode; Pending, tests passed; commit Pending.

@@ -67,7 +67,7 @@ def test_worker_uses_one_udp_socket_for_app_stream_command_and_ack():
                                    mavutil.mavlink.MAV_AUTOPILOT_GENERIC, 0, 0,
                                    mavutil.mavlink.MAV_STATE_STANDBY, 3)
             for name, value in (('ARM_MODE', 0.), ('ARM_VALID', 1.),
-                                ('MIS_READY', 1.), ('TAKEOFF_H', 10.), ('APP_MODE', 0.)):
+                                ('MIS_READY', 1.), ('TAKEOFF_H', 10.), ('APP_MODE', 1.)):
                 app.mav.named_value_float_send(1000, name.encode(), value)
             sleep(.03)
         assert worker.flight.remote.valid
