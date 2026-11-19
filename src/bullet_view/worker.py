@@ -14,6 +14,7 @@ from math import isfinite
 
 from PySide6 import QtCore
 from pymavlink import mavutil
+from bullet_simulation_protocol.view_bbox import MESSAGE_TYPE, decode_bbox
 
 from .model import Attitude, Altitude, Bbox, Heartbeat, Rangefinder, StatusText, TelemetryUpdate
 
@@ -160,7 +161,7 @@ class MavlinkWorker(QtCore.QObject):
                 self._poll_flight()
                 message = self.connection.recv_match(
                     type=['HEARTBEAT', 'ATTITUDE', 'ALTITUDE', 'DISTANCE_SENSOR', 'STATUSTEXT',
-                          'NAMED_VALUE_FLOAT', 'COMMAND_ACK'],
+                          'NAMED_VALUE_FLOAT', 'COMMAND_ACK', 'V2_EXTENSION'],
                     blocking=True,
                     timeout=RECEIVE_TIMEOUT_S,
                 )
@@ -229,6 +230,19 @@ class MavlinkWorker(QtCore.QObject):
             value = Bbox(valid, *coordinates) if valid and all(
                 item is not None and isfinite(item) for item in coordinates
             ) else Bbox(False)
+            kind = 'BBOX'
+        elif kind == 'V2_EXTENSION':
+            if (message.target_network != 0 or message.target_system != GCS_SYSTEM_ID
+                    or message.target_component != GCS_COMPONENT_ID
+                    or message.message_type != MESSAGE_TYPE):
+                return
+            try:
+                packet = decode_bbox(message.payload)
+            except ValueError:
+                return
+            box = packet['bbox']
+            value = Bbox(False, fid=packet['fid']) if box is None else Bbox(
+                True, box['x'], box['y'], box['width'], box['height'], packet['fid'])
             kind = 'BBOX'
         else:
             return

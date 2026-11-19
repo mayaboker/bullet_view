@@ -9,9 +9,12 @@ description = "MAVLink telemetry viewer for Bullet flight simulations"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "bullet-image-transport",
     "bullet-msgs",
+    "bullet-simulation-protocol",
     "pymavlink>=2.4,<3",
     "pyside6-essentials>=6.8,<7",
+    "pyzmq>=27,<28",
 ]
 
 [dependency-groups]
@@ -24,4 +27,6 @@ bullet-view = "bullet_view.main:main"
 testpaths = ["tests"]
 
 [tool.uv.sources]
+bullet-image-transport = { path = "../bullet_drone/libs/bullet_image_transport", editable = true }
 bullet-msgs = { path = "../../workspaces/bullet/projects/bullet_msgs", editable = true }
+bullet-simulation-protocol = { path = "../bullet_drone/libs/bullet_simulation_protocol", editable = true }

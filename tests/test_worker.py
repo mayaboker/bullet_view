@@ -2,6 +2,7 @@ from bullet_view.model import Bbox, StatusText, TelemetryUpdate
 from bullet_view.presenter import Presenter, VerticalSpeedEstimator
 from bullet_view.worker import MavlinkWorker
 from bullet_view.peer_udp import AppPeerUDP
+from bullet_simulation_protocol.view_bbox import MESSAGE_TYPE, encode_bbox
 import pytest
 import socket
 from threading import Thread
@@ -136,6 +137,21 @@ def test_worker_reassembles_bbox_named_values():
 
     assert updates[-1].kind == 'BBOX'
     assert updates[-1].value == Bbox(True, 10., 20., 30., 40.)
+
+
+def test_worker_decodes_fid_bbox_extension():
+    worker = MavlinkWorker('test')
+    updates = []
+    worker.update.connect(updates.append)
+    payload = encode_bbox(7, {'x': 1, 'y': 2, 'width': 3, 'height': 4})
+    worker._emit_message(Message('V2_EXTENSION', target_network=0, target_system=255,
+                                 target_component=190, message_type=MESSAGE_TYPE,
+                                 payload=payload.ljust(249, b'\0')), 1.)
+    assert updates[-1].value == Bbox(True, 1, 2, 3, 4, 7)
+    worker._emit_message(Message('V2_EXTENSION', target_network=0, target_system=255,
+                                 target_component=190, message_type=MESSAGE_TYPE,
+                                 payload=b'bad'), 1.)
+    assert len(updates) == 1
 
 
 def test_worker_does_not_retry_after_connection_failure():

@@ -235,8 +235,8 @@ class CameraFrame(QtWidgets.QWidget):
         painter.fillRect(self.rect(), QtGui.QColor('#101c2a'))
         if self.image is None:
             painter.setPen(QtGui.QColor('#9bb0c8'))
-            text = ('Remote image streaming is planned for v2' if self.mode == 'remote'
-                    else 'Local camera image unavailable\nSelect Local mode and start the renderer')
+            text = ('Local camera image unavailable; waiting for renderer' if self.mode == 'local'
+                   else 'Start View with --image-endpoint to show the local camera')
             painter.drawText(self.rect(), QtCore.Qt.AlignmentFlag.AlignCenter,
                              text)
             painter.end()
@@ -297,9 +297,11 @@ class MainWindow(QtWidgets.QMainWindow):
         header.addWidget(QtWidgets.QLabel('Image mode'))
         self.image_mode = QtWidgets.QComboBox()
         self.image_mode.addItems(['Local', 'Remote'])
-        self.image_mode.setCurrentText('Remote')
+        configured_image_mode = getattr(self.presenter, 'image_mode', 'remote')
+        self.image_mode.setCurrentText(configured_image_mode.title())
         self.image_mode.setEnabled(False)
-        self.image_mode.setToolTip('Camera is unavailable until Bullet App relays images.')
+        self.image_mode.setToolTip('Local camera is enabled by --image-endpoint.' if configured_image_mode == 'local'
+                                  else 'Start View with --image-endpoint to show the renderer camera.')
         self.image_mode.currentTextChanged.connect(self._set_image_mode)
         header.addWidget(self.image_mode)
         header.addWidget(QtWidgets.QLabel(presenter.endpoint))

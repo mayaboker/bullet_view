@@ -3,10 +3,15 @@ flowchart LR
     SITL["Betaflight SITL"]
     APP["Bullet App<br/>MAVLink system 1, component 1"]
     VIEW["Bullet View<br/>MAVLink system 255, component 190"]
+    RENDER["Godot renderer"]
+    VISUAL["Bullet Visual"]
 
     SITL -->|"MAVLink over TCP :5762<br/>HEARTBEAT, VFR_HUD, ATTITUDE"| APP
     APP -->|"MSP over TCP :5761<br/>RC channels"| SITL
-    APP -->|"MAVLink 2 over UDP 127.0.0.1:14550<br/>telemetry, state, and COMMAND_ACK"| VIEW
+    RENDER -->|"ZMQ descriptors TCP :5556<br/>local SHM pixels"| VIEW
+    RENDER -->|"ZMQ descriptors TCP :5556<br/>local SHM pixels"| VISUAL
+    VISUAL -->|"ZMQ bbox TCP :5560<br/>fid + bbox"| APP
+    APP -->|"MAVLink 2 over UDP 127.0.0.1:14550<br/>telemetry, bbox, and COMMAND_ACK"| VIEW
     VIEW -->|"Reply through the same UDP socket<br/>HEARTBEAT and COMMAND_LONG"| APP
 ```
 
@@ -36,6 +41,7 @@ on the local UDP link, not authentication.
 | App → View, port 14550 | `ATTITUDE` | Up to 20 Hz while SITL attitude is fresh | Roll, pitch, yaw, and angular rates relayed from SITL. |
 | App → View, port 14550 | `ALTITUDE` | Up to 20 Hz while SITL `VFR_HUD` altitude is fresh | `altitude_local` in metres relative to the mission ground datum; other altitude fields are `NaN`. |
 | App → View, port 14550 | `STATUSTEXT` | On phase/result changes or a denied command | Phase, result, fault, or command-denial reason. |
+| App → View, port 14550 | `V2_EXTENSION` type 32768 | For each validated target-hit detection | Image fid and bbox coordinates or `null`; View overlays only a matching local frame. |
 | View → App, reply on same socket | `HEARTBEAT` | About 1 Hz after the first valid App packet | Identifies View as a ground station and keeps its control link alive. |
 | View → App, reply on same socket | `COMMAND_LONG` | When an operator requests a flight action | Arm, disarm, emergency disarm, start, or land. The legacy set-height command is denied. |
 | App → View, port 14550 | `COMMAND_ACK` | Once per addressed `COMMAND_LONG` processed | `MAV_RESULT_ACCEPTED` or `MAV_RESULT_DENIED`, addressed to View `255/190`. |
@@ -97,10 +103,19 @@ command result.
 The SITL link in the diagram is separate from the App–View link. App reads
 SITL `HEARTBEAT`, `VFR_HUD`, and `ATTITUDE` over MAVLink TCP and requests the
 last two at 50 Hz. App controls SITL using MSP RC channels over another TCP
-connection. View does not connect directly to SITL or the renderer.
+connection. View does not connect directly to SITL. Its optional camera worker
+connects to the renderer's image descriptor stream and reads local shared memory.
 
-View's worker can parse `DISTANCE_SENSOR`, bounding-box named values, and
-recording named values, but the current App bridge does not publish them.
+For target-hit, App forwards validated bbox results to View as MAVLink
+`V2_EXTENSION` message type 32768 on the existing UDP link. The payload is a
+little-endian uint16 JSON length followed by `{"fid": integer, "bbox": null |
+{"x": integer, "y": integer, "width": integer, "height": integer}}`.
+View reads matching camera pixels directly from the local renderer's ZMQ/SHM
+stream on port 5556. The older bounding-box named-value parser remains for
+compatibility but does not drive the fid-matched overlay.
+
+View's worker can parse `DISTANCE_SENSOR` and recording named values, but the
+current App bridge does not publish them.
 Parameter and recording command code also remains in View, but the active
 worker loop does not dispatch those requests. They are not part of the active
 App–View MAVLink exchange described above.

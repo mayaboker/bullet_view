@@ -3,9 +3,9 @@
 Bullet View is the local flight dashboard for Bullet App. It receives app-owned
 MAVLink telemetry on `udpin:127.0.0.1:14550`. After App sends its first packet,
 View returns its heartbeat and flight commands on that same UDP socket and
-receives command ACKs there. It does not connect to
-Betaflight SITL or to the renderer. The camera, parameter, and recording
-panels remain visible but disabled until Bullet App supports them.
+receives command ACKs there. It does not connect to Betaflight SITL. With
+`--image-endpoint`, it subscribes directly to the local renderer camera;
+parameter and recording controls remain unavailable.
 
 ## Run
 
@@ -46,8 +46,10 @@ and exits after the flight. The app reports a fault when SITL telemetry becomes
 stale; restart it before flying again.
 
 The dashboard shows app-relayed attitude and altitude, vertical speed,
-armed state, mission phase, and status messages. The image panel is disabled:
-there is no direct renderer image subscription.
+armed state, mission phase, and status messages. Launch with
+`--image-endpoint tcp://127.0.0.1:5556` to show the local renderer image.
+For target-hit, Bullet App relays fid-tagged detections over the existing
+MAVLink link; View overlays only boxes matching a displayed image fid.
 
 ## Desktop launcher
 

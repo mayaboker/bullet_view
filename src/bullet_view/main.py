@@ -44,6 +44,7 @@ def main(argv=None):
     add_launcher_arguments(parser)
     parser.add_argument('--mavlink-endpoint', default=DEFAULT_ENDPOINT,
                         help='App MAVLink UDP listener (udpin:HOST:PORT)')
+    parser.add_argument('--image-endpoint', help='Local renderer image ZMQ endpoint (tcp://HOST:PORT)')
     parser.add_argument('--monitor', help='Qt screen name for the Bullet View window')
     parser.add_argument('--monitor-half', choices=('top', 'bottom'),
                         help='Use the top or bottom half of --monitor')
@@ -58,7 +59,7 @@ def main(argv=None):
         return setup
     application = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     configure_application(application)
-    presenter = Presenter(args.mavlink_endpoint, image_mode='remote')
+    presenter = Presenter(args.mavlink_endpoint, image_endpoint=args.image_endpoint)
     window = MainWindow(presenter)
     place_on_monitor(window, application, args.monitor, args.monitor_half)
     window.show()

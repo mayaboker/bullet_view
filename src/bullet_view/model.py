@@ -58,6 +58,7 @@ class Bbox:
     y: float | None = None
     width: float | None = None
     height: float | None = None
+    fid: int | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,8 @@ class ImageFrame:
     pixels: bytes
     sequence: int
     capture_ns: int
+    fid: int | None = None
+    session: str = ''
 
 
 @dataclass(frozen=True)

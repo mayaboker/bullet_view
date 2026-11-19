@@ -8,6 +8,7 @@ from pymavlink import mavutil
 from .model import TelemetrySnapshot
 from .parameters import ParameterSnapshot, save_yaml
 from .worker import MavlinkWorker
+from .image_stream import ImageWorker, FrameMatcher
 from .flight_control import FlightSnapshot, flight_action_block_reason
 from .recording_control import RecordingSnapshot
 
@@ -59,13 +60,24 @@ class Presenter(QtCore.QObject):
     flight_changed = QtCore.Signal(object)
     recording_changed = QtCore.Signal(object)
 
-    def __init__(self, endpoint, *, image_mode='remote', worker_factory=MavlinkWorker,
+    def __init__(self, endpoint, *, image_mode='remote', image_endpoint=None,
+                 worker_factory=MavlinkWorker, image_worker_factory=ImageWorker,
                  clock=time.monotonic):
         super().__init__()
         self.endpoint = endpoint
         self.worker_factory = worker_factory
         self.clock = clock
-        self.image_mode = image_mode
+        self.image_mode = 'local' if image_endpoint else image_mode
+        self.matcher = FrameMatcher() if image_endpoint else None
+        self.image_thread = QtCore.QThread(self) if image_endpoint else None
+        self.image_worker = image_worker_factory(image_endpoint) if image_endpoint else None
+        if self.image_worker is not None:
+            self.image_worker.moveToThread(self.image_thread)
+            self.image_thread.started.connect(self.image_worker.run)
+            self.image_worker.frame.connect(self._on_frame)
+            self.image_worker.failed.connect(self._set_status)
+            self.image_worker.finished.connect(self.image_thread.quit)
+            self.image_thread.finished.connect(self.image_worker.deleteLater)
         self.snapshot = TelemetrySnapshot()
         self.parameter_snapshot = ParameterSnapshot()
         self.flight_snapshot = FlightSnapshot()
@@ -98,24 +110,32 @@ class Presenter(QtCore.QObject):
 
     def start(self):
         self.thread.start()
+        if self.image_thread is not None:
+            self.image_thread.start()
         self.timer.start()
 
     def stop(self):
         self.timer.stop()
         self.worker.request_stop()
+        if self.image_worker is not None:
+            self.image_worker.request_stop()
         if self.thread.isRunning():
             self.thread.quit()
             self.thread.wait(2000)
+        if self.image_thread is not None and self.image_thread.isRunning():
+            self.image_thread.quit()
+            self.image_thread.wait(2000)
 
     def set_image_mode(self, mode):
-        if mode != 'remote':
-            raise ValueError('Camera is unavailable until Bullet App relays images')
-        self.image_mode = 'remote'
+        if mode != self.image_mode:
+            raise ValueError('Image mode is fixed by the configured local camera endpoint')
 
     @QtCore.Slot(object)
     def _on_frame(self, frame):
-        self.snapshot = replace(self.snapshot, image=frame)
-        self.snapshot_changed.emit(self.snapshot)
+        result = self.matcher.add_frame(frame, self.clock()) if self.matcher else (frame, None)
+        if result is not None:
+            self.snapshot = replace(self.snapshot, image=result[0], bbox=result[1])
+            self.snapshot_changed.emit(self.snapshot)
 
     @QtCore.Slot(object)
     def _on_parameters(self, snapshot):
@@ -225,7 +245,10 @@ class Presenter(QtCore.QObject):
         elif update.kind == 'STATUSTEXT':
             values['messages'] = self.snapshot.messages + (update.value,)
         elif update.kind == 'BBOX':
-            values['bbox'] = update.value
+            if self.matcher is not None and update.value.fid is not None:
+                result = self.matcher.add_bbox(update.value, update.received_at_s)
+                if result is not None:
+                    values['image'], values['bbox'] = result
         self.snapshot = replace(self.snapshot, **values)
         if first_message:
             self._set_status('Connected')
@@ -239,6 +262,11 @@ class Presenter(QtCore.QObject):
         self.snapshot_changed.emit(self.snapshot)
 
     def _refresh_freshness(self):
+        if self.matcher is not None:
+            result = self.matcher.fallback(self.clock())
+            if result is not None:
+                self.snapshot = replace(self.snapshot, image=result[0], bbox=None)
+                self.snapshot_changed.emit(self.snapshot)
         if self.snapshot.last_message_at_s is None:
             return
         age = self.clock() - self.snapshot.last_message_at_s
