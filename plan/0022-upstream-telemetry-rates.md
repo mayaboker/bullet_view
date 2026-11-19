@@ -10,4 +10,4 @@ Verification: protocol conversion, presenter, and offscreen widget tests.
 
 Scope/defaults: App owns rate measurement and alert thresholds; View only displays received values and warnings.
 
-Status: Implemented; 84 View tests passed with one skip. Implementation commit: Pending (no commit requested).
+Status: Implemented; 84 View tests passed with one skip. Implementation commit: `dca2ee8`.
