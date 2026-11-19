@@ -1,7 +1,7 @@
 # Mission approval controls
 
-Status: Pending
-Implementation commit: Pending
+Status: Implemented; offscreen tests passed
+Implementation commit: 110e0f9f1c496287309ad7b6aff0ab545cc9b874
 
 Goal: Show mission-configured altitude without editing it and make View Arm/Start apply only to manually approved missions.
 
