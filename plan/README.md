@@ -30,4 +30,4 @@
 - [0018: Target mission status](0018-target-mission-status.md) — Show target mission, phase and result; Pending, focused tests passed; commit Pending.
 - [0019: Mission approval controls](0019-mission-approval-controls.md) — Show configured height and gate Arm/Start by approval mode; Implemented, tests passed; commit `110e0f9f1c496287309ad7b6aff0ab545cc9b874`.
 - [0020: Named-monitor launch](0020-named-monitor-launch.md) — Place Bullet View in the lower half of the tmuxp stack's monitor; Implemented, offscreen and live checks passed; commits `78221c8949ba238bcfe0b1cd6aa2ef8187787bb6` (`bullet_view`), `3651d5bfff7d1ac0b92a36252ab1bc5bd7c9ce44` (`bullet_ng`).
-- [0021: Local camera and fid-matched bbox](0021-local-image-bbox.md) — Show local renderer frames and App-relayed detections; Implemented, tests and live smoke passed; commit Pending.
+- [0021: Local camera and fid-matched bbox](0021-local-image-bbox.md) — Show local renderer frames and App-relayed detections; Implemented, tests and live smoke passed; commits `3b76b199fefc31d1d02e0efbe46d3cadd674a7c2` (`bullet_view`), `1ae98872366242be0ec6b1b156b31f8e3dcd149e` (`bullet_ng`).
