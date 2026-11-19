@@ -37,13 +37,13 @@ on the local UDP link, not authentication.
 | Direction | Message | When sent | Meaning |
 | --- | --- | --- | --- |
 | App → View, port 14550 | `HEARTBEAT` | About 1 Hz | Quadrotor heartbeat with firmware armed flag and App standby/active status. |
-| App → View, port 14550 | `NAMED_VALUE_FLOAT` | Nine values about 10 times/s | Armed state, validity, readiness, height, App mode, selected mission, phase, result, and detector readiness; see below. |
+| App → View, port 14550 | `NAMED_VALUE_FLOAT` | Ten values about 10 times/s | Armed state, validity, readiness, height, hover duration, App mode, selected mission, phase, result, and detector readiness; see below. |
 | App → View, port 14550 | `ATTITUDE` | Up to 20 Hz while SITL attitude is fresh | Roll, pitch, yaw, and angular rates relayed from SITL. |
 | App → View, port 14550 | `ALTITUDE` | Up to 20 Hz while SITL `VFR_HUD` altitude is fresh | `altitude_local` in metres relative to the mission ground datum; other altitude fields are `NaN`. |
 | App → View, port 14550 | `STATUSTEXT` | On phase/result changes or a denied command | Phase, result, fault, or command-denial reason. |
 | App → View, port 14550 | `V2_EXTENSION` type 32768 | For each validated target-hit detection | Image fid and bbox coordinates or `null`; View overlays only a matching local frame. |
 | View → App, reply on same socket | `HEARTBEAT` | About 1 Hz after the first valid App packet | Identifies View as a ground station and keeps its control link alive. |
-| View → App, reply on same socket | `COMMAND_LONG` | When an operator requests a flight action | Arm, disarm, emergency disarm, start, or land. The legacy set-height command is denied. |
+| View → App, reply on same socket | `COMMAND_LONG` | When an operator requests a flight action | Arm, disarm, emergency disarm, apply target height, start, or land. |
 | App → View, port 14550 | `COMMAND_ACK` | Once per addressed `COMMAND_LONG` processed | `MAV_RESULT_ACCEPTED` or `MAV_RESULT_DENIED`, addressed to View `255/190`. |
 
 App considers View disconnected if its last View `HEARTBEAT` is more than
@@ -55,7 +55,7 @@ enabling ordinary flight actions.
 
 ## `NAMED_VALUE_FLOAT` state
 
-The nine values in each update share a `time_boot_ms` value so View can assemble
+The ten values in each update share a `time_boot_ms` value so View can assemble
 the four core flight fields into one state snapshot.
 
 | Name | Values and meaning |
@@ -63,7 +63,8 @@ the four core flight fields into one state snapshot.
 | `ARM_MODE` | `0` disarmed, `1` armed, as reported by SITL firmware. |
 | `ARM_VALID` | `1` if App has received a SITL heartbeat within 3 seconds; otherwise `0`. |
 | `MIS_READY` | `0` unavailable/prearm or transition, `1` disarmed idle, `2` armed idle, `3` flying, `4` fault/reset required. |
-| `TAKEOFF_H` | Mission-profile takeoff height in metres above launch; hover/land defaults to 20 m. View displays it read-only. |
+| `TAKEOFF_H` | Applied takeoff and hover height in metres above launch; hover/land defaults to 20 m and target-hit defaults to 10 m. Editable from View for manual target-hit before Start. |
+| `HOVER_S` | Configured hover duration in seconds; target-hit uses a fixed 5 s before search. It is display-only in View. |
 | `APP_MODE` | `0` automatic approval, `1` manual View approval. Mode is selected when App starts. |
 | `APP_PHASE` | `0` prearm, `1` disarmed, `2` arming, `3` armed, `4` takeoff, `5` hover, `6` land, `7` disarming, `8` fault, `9` search, `10` center, `11` settle, `12` LOS, `13` commit. |
 | `APP_MSN` | `1` hover-land, `2` target-hit. MAVLink named-value names are limited to 10 bytes. |
@@ -86,7 +87,7 @@ zero. App rejects non-finite or unsupported parameter combinations.
 | Disarm | `400` | `param1=0`, `param2=0` | Normal disarm is for the ground/armed idle state. |
 | Emergency disarm | `400` | `param1=0`, `param2=21196` | Enters App fault and stops normal flight control. |
 | Start selected mission | `300` (`MAV_CMD_MISSION_START`) | All zero | Manual approval mode with confirmed arm and fresh altitude; no preflight Visual requirement. |
-| Set takeoff height (legacy) | `31012` | `param1=height_m` | Denied; mission profile fixes the height at startup. |
+| Apply target height | `31012` | `param1=height_m`, all others zero | Manual target-hit only, while disarmed or armed idle before Start; height 0.1–100 m. The slider displays 0–100 m, but 0 m cannot be applied. |
 | Land | `21` (`MAV_CMD_NAV_LAND`) | All zero | Abort an active flight in either approval mode. |
 
 App sends `COMMAND_ACK` with the original command ID and an accepted or denied
@@ -95,7 +96,8 @@ emergency disarm, `4` start, `5` height, `6` land (`0` for an invalid action).
 View checks the ACK source, target, command ID, and an action ID matching the
 request (or `0`, which its current client also accepts). Accepted means
 App accepted the request; View reports completion only after the corresponding
-state change appears in App telemetry. A denial or timeout is shown as a
+state change appears in App telemetry. For target height, View waits for
+`TAKEOFF_H` to match the requested value. A denial or timeout is shown as a
 command result.
 
 ## Scope and currently inactive handlers

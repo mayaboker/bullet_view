@@ -37,9 +37,38 @@ def test_height_is_set_by_mission_profile():
     c, mav, outputs, sent = client()
     assert c.remote.height_m is None
     state(c, 1.)
-    with pytest.raises(ValueError, match='mission profile'):
+    with pytest.raises(ValueError, match='manual target mission'):
         c.request('height', 5.5, mav, 1.1)
     assert sent == [] and c.remote.height_m == 20.
+
+
+def test_target_height_requires_ack_and_observed_value():
+    c, mav, _, sent = client()
+    state(c, 1., height=10.)
+    c.named(packet(time_boot_ms=1000, value=2.), 'APP_MSN', 1.)
+    c.named(packet(time_boot_ms=1000, value=5.), 'HOVER_S', 1.)
+    c.request('height', 12.5, mav, 1.1)
+    assert sent[-1][2:6] == (TAKEOFF_HEIGHT_COMMAND, 0, 12.5, 0.)
+    c.ack(ack(TAKEOFF_HEIGHT_COMMAND, 'height'), 1.2)
+    assert c.pending is not None
+    state(c, 1.3, height=12.5)
+    assert c.pending is None
+    assert c.snapshot().hover_s == 5.
+    state(c, 1.4, height=12.5, readiness=FLYING)
+    with pytest.raises(ValueError, match='active'):
+        c.request('height', 13., mav, 1.4)
+
+
+def test_target_height_validates_and_other_missions_reject():
+    c, mav, _, sent = client()
+    state(c, 1.)
+    with pytest.raises(ValueError, match='target mission'):
+        c.request('height', 12., mav, 1.1)
+    c.named(packet(time_boot_ms=1000, value=2.), 'APP_MSN', 1.)
+    for value in (0., 100.1, float('nan')):
+        with pytest.raises(ValueError):
+            c.request('height', value, mav, 1.1)
+    assert sent == []
 
 
 def test_wrong_target_wrong_command_late_arm_ack_and_disarm_preemption():
@@ -133,6 +162,35 @@ class Presenter(QtCore.QObject):
     def __init__(self):
         super().__init__(); self.requests=[]
     def request_flight(self,*args): self.requests.append(args)
+
+
+@pytest.fixture(scope='module')
+def qt_app():
+    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+def test_manual_target_panel_slider_applies_height_before_start(qt_app):
+    p = Presenter()
+    panel = FlightPanel(p)
+    remote = FlightState(True, True, ARMED_IDLE, 10., 1., (1, 1))
+    panel.set_snapshot(FlightSnapshot(remote, mode='manual', mission='target-hit', hover_s=5.))
+    assert panel.height.isEnabled() and panel.slider.isEnabled()
+    assert panel.slider.minimum() == 0 and panel.slider.maximum() == 1000
+    panel.slider.setValue(125)
+    assert panel.height.value() == 12.5
+    panel.height.setValue(0.)
+    assert panel.slider.value() == 0 and not panel.apply.isEnabled() and not panel.start.isEnabled()
+    panel.height.setValue(12.5)
+    assert panel.apply.isEnabled() and not panel.start.isEnabled()
+    panel.apply.click()
+    assert p.requests[-1] == ('height', 12.5)
+    panel.set_snapshot(FlightSnapshot(remote, pending='height', mode='manual', mission='target-hit', hover_s=5.))
+    assert not panel.apply.isEnabled() and not panel.start.isEnabled()
+    confirmed = FlightState(True, True, ARMED_IDLE, 12.5, 2., (1, 1))
+    panel.set_snapshot(FlightSnapshot(confirmed, result='height: ACK accepted and remote state confirmed',
+                                      mode='manual', mission='target-hit', hover_s=5.))
+    assert panel.start.isEnabled() and not panel.apply.isEnabled()
+    panel.close()
 
 
 def test_panel_shows_profile_height_and_keeps_abort_controls(monkeypatch):

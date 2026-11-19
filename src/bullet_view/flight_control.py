@@ -28,6 +28,7 @@ class FlightSnapshot:
     mission: str = 'unknown'
     mission_result: str = 'pending'
     vision_ready: bool = False
+    hover_s: float | None = None
 
 
 def flight_action_block_reason(snapshot, action, height_m=None, *, now=None):
@@ -42,7 +43,7 @@ def flight_action_block_reason(snapshot, action, height_m=None, *, now=None):
         return 'Waiting for fresh arming feedback'
     if snapshot.pending is not None:
         return f'Waiting for {snapshot.pending} confirmation'
-    if snapshot.mission == 'target-hit' and snapshot.mission_result != 'pending' and action in ('arm', 'start'):
+    if snapshot.mission == 'target-hit' and snapshot.mission_result != 'pending' and action in ('arm', 'start', 'height'):
         return 'Target mission completed; restart App and launcher'
     if remote.readiness == RESET_REQUIRED:
         return 'Stop/reset required before arming'
@@ -67,6 +68,11 @@ def flight_action_block_reason(snapshot, action, height_m=None, *, now=None):
         if remote.readiness != FLYING or snapshot.phase not in ('takeoff', 'hover', 'search',
                                                                  'center', 'settle', 'los', 'commit'):
             return 'Active flight required to land'
+    elif action == 'height':
+        if snapshot.mode != 'manual' or snapshot.mission != 'target-hit':
+            return 'Height requires manual target mission'
+        if remote.readiness not in (DISARMED_IDLE, ARMED_IDLE):
+            return 'Height requires idle flight before Start'
     else:
         raise ValueError('Unknown flight availability action')
     return None
@@ -87,11 +93,12 @@ class FlightClient:
         self.mission = 'unknown'
         self.mission_result = 'pending'
         self.vision_ready = False
+        self.hover_s = None
 
     def snapshot(self):
         return FlightSnapshot(self.remote, None if self.pending is None else self.pending['action'], self.result,
                               self.control_available, self.mode, self.phase, self.mission, self.mission_result,
-                              self.vision_ready)
+                              self.vision_ready, self.hover_s)
 
     def set_available(self, available):
         self.control_available = available
@@ -126,6 +133,11 @@ class FlightClient:
             self._complete(now)
             self.notify()
             return
+        if name == 'HOVER_S':
+            value = float(message.value)
+            self.hover_s = value if isfinite(value) else None
+            self.notify()
+            return
         if self.stamp is not None:
             delta = (message.time_boot_ms - self.stamp) % 2**32
             if delta >= 2**31:
@@ -150,7 +162,7 @@ class FlightClient:
     def request(self, action, value, mav, now):
         if not self.control_available:
             raise ValueError('Flight control connection unavailable')
-        if action in ('arm', 'start', 'land'):
+        if action in ('arm', 'start', 'land', 'height'):
             reason = flight_action_block_reason(self.snapshot(), action, value, now=now)
             if reason is not None:
                 raise ValueError(reason)
@@ -164,8 +176,9 @@ class FlightClient:
         remote = self.remote
         if not disarm and (not remote.valid or now - remote.received_at_s > STATE_STALE_S):
             raise ValueError('Fresh remote flight state required')
-        if action == 'height':
-            raise ValueError('Height is fixed by the mission profile')
+        if action == 'height' and (type(value) not in (int, float) or not isfinite(value)
+                                   or not MIN_TAKEOFF_HEIGHT_M <= value <= MAX_TAKEOFF_HEIGHT_M):
+            raise ValueError('Target height must be 0.1–100 m')
         if action == 'disarm' and (not remote.valid or remote.readiness == FLYING):
             raise ValueError('Emergency confirmation required')
         command = (TAKEOFF_HEIGHT_COMMAND if action == 'height' else
@@ -236,5 +249,6 @@ class FlightClient:
         self.pending = None
         self.mode = 'unknown'
         self.phase = 'unknown'
+        self.hover_s = None
         self.result = 'Flight control connection unavailable'
         self.notify()
