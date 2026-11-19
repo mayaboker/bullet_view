@@ -1,8 +1,9 @@
 """Bullet View application entry point."""
 import argparse
+import logging
 import sys
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 from .presenter import Presenter
 from .view import MainWindow
@@ -10,6 +11,32 @@ from .desktop import add_launcher_arguments, handle_launcher_arguments, configur
 
 
 DEFAULT_ENDPOINT = 'udpin:127.0.0.1:14550'
+WINDOW_MARGIN_PX = 20
+
+
+def place_on_monitor(window, application, name, half=None):
+    if half not in (None, 'top', 'bottom'):
+        raise ValueError(f'Invalid monitor half: {half}')
+    if not name:
+        return
+    screen = next((screen for screen in application.screens() if screen.name() == name), None)
+    if screen is None:
+        screen = application.primaryScreen()
+        logging.warning('Monitor %s unavailable; using primary monitor %s',
+                        name, screen.name() if screen else '(none)')
+    if screen is None:
+        return
+    geometry = QtCore.QRect(screen.availableGeometry())
+    if half is not None:
+        top_height = geometry.height() // 2
+        if half == 'bottom':
+            geometry.setTop(geometry.top() + top_height)
+        else:
+            geometry.setHeight(top_height)
+    width = min(window.width(), max(1, geometry.width() - 2 * WINDOW_MARGIN_PX))
+    height = min(window.height(), max(1, geometry.height() - 2 * WINDOW_MARGIN_PX))
+    window.resize(width, height)
+    window.move(geometry.x() + WINDOW_MARGIN_PX, geometry.y() + WINDOW_MARGIN_PX)
 
 
 def main(argv=None):
@@ -17,7 +44,12 @@ def main(argv=None):
     add_launcher_arguments(parser)
     parser.add_argument('--mavlink-endpoint', default=DEFAULT_ENDPOINT,
                         help='App MAVLink UDP listener (udpin:HOST:PORT)')
+    parser.add_argument('--monitor', help='Qt screen name for the Bullet View window')
+    parser.add_argument('--monitor-half', choices=('top', 'bottom'),
+                        help='Use the top or bottom half of --monitor')
     args = parser.parse_args(argv)
+    if args.monitor_half and not args.monitor:
+        parser.error('--monitor-half requires --monitor')
     try:
         setup = handle_launcher_arguments(args)
     except (OSError, ValueError) as error:
@@ -28,6 +60,7 @@ def main(argv=None):
     configure_application(application)
     presenter = Presenter(args.mavlink_endpoint, image_mode='remote')
     window = MainWindow(presenter)
+    place_on_monitor(window, application, args.monitor, args.monitor_half)
     window.show()
     presenter.start()
     return application.exec()
