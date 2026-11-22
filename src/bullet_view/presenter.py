@@ -10,7 +10,6 @@ from .parameters import ParameterSnapshot, save_yaml
 from .worker import MavlinkWorker
 from .image_stream import ImageWorker, FrameMatcher
 from .flight_control import FlightSnapshot, flight_action_block_reason
-from .recording_control import RecordingSnapshot
 
 
 STALE_AFTER_S = .75
@@ -60,7 +59,6 @@ class Presenter(QtCore.QObject):
     messages_cleared = QtCore.Signal()
     parameters_changed = QtCore.Signal(object)
     flight_changed = QtCore.Signal(object)
-    recording_changed = QtCore.Signal(object)
 
     def __init__(self, endpoint, *, image_mode='remote', image_endpoint=None,
                  worker_factory=MavlinkWorker, image_worker_factory=ImageWorker,
@@ -84,7 +82,6 @@ class Presenter(QtCore.QObject):
         self.parameter_snapshot = ParameterSnapshot()
         self.flight_snapshot = FlightSnapshot()
         self._queued_flight_action = None
-        self.recording_snapshot = RecordingSnapshot()
         self._export_destination = None
         self._export_sync_started = False
         self.vertical_speed = VerticalSpeedEstimator()
@@ -102,8 +99,6 @@ class Presenter(QtCore.QObject):
             self.worker.flight_changed.connect(self._on_flight)
         if hasattr(self.worker, 'flight_request_handled'):
             self.worker.flight_request_handled.connect(self._on_flight_request_handled)
-        if hasattr(self.worker, 'recording_changed'):
-            self.worker.recording_changed.connect(self._on_recording)
         self.worker.finished.connect(self.thread.quit)
         self.thread.finished.connect(self.worker.deleteLater)
         self.timer = QtCore.QTimer(self)
@@ -193,14 +188,6 @@ class Presenter(QtCore.QObject):
         if self.worker.request_flight(action, value) is False:
             self._queued_flight_action = previous_queued
             self._on_flight(previous)
-
-    @QtCore.Slot(object)
-    def _on_recording(self, snapshot):
-        self.recording_snapshot = snapshot
-        self.recording_changed.emit(snapshot)
-
-    def request_recording(self, start):
-        self.worker.request_recording(start)
 
     def apply_parameter(self, id, value):
         self.worker.set_parameter(id, value)

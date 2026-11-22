@@ -2,13 +2,12 @@
 from math import degrees, radians, sin, cos
 
 from PySide6 import QtCore, QtGui, QtWidgets
-from bullet_msgs.status_messages import (MAV_SEVERITY_ERROR, MAV_SEVERITY_INFO, MAV_SEVERITY_WARNING,
-                                         STATUS_MESSAGE_BY_INDEX)
+from .status_messages import (MAV_SEVERITY_ERROR, MAV_SEVERITY_INFO, MAV_SEVERITY_WARNING,
+                              STATUS_MESSAGE_BY_INDEX)
 
 from .model import Bbox, ImageFrame, TelemetrySnapshot
 from .parameter_view import ParameterPanel
 from .flight_view import FlightPanel
-from .recording_view import RecordingPanel
 
 
 WINDOW_WIDTH = 1360
@@ -309,10 +308,6 @@ class MainWindow(QtWidgets.QMainWindow):
         outer.addLayout(header)
         self.flight_panel = FlightPanel(presenter)
         outer.addWidget(self.flight_panel)
-        self.recording_panel = RecordingPanel(presenter)
-        self.recording_panel.setEnabled(False)
-        self.recording_panel.setToolTip('Recording controls are unavailable in the current flight app.')
-        outer.addWidget(self.recording_panel)
         self.tabs = QtWidgets.QTabWidget()
         self.telemetry_tab = QtWidgets.QWidget()
         self.telemetry_scroll = QtWidgets.QScrollArea()
@@ -387,7 +382,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.auto_scroll.toggled.connect(self._set_auto_scroll)
         message_header.addWidget(self.auto_scroll)
         self.clear_log = QtWidgets.QPushButton('Clear log')
-        self.clear_log.setToolTip('Clear viewer history; remote logs and recordings are unaffected.')
+        self.clear_log.setToolTip('Clear viewer message history only.')
         self.clear_log.clicked.connect(getattr(self.presenter, 'clear_messages', lambda: None))
         message_header.addWidget(self.clear_log)
         message_layout.addLayout(message_header)

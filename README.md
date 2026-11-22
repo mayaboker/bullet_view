@@ -5,11 +5,13 @@ MAVLink telemetry on `udpin:127.0.0.1:14550`. After App sends its first packet,
 View returns its heartbeat and flight commands on that same UDP socket and
 receives command ACKs there. It does not connect to Betaflight SITL. With
 `--image-endpoint`, it subscribes directly to the local renderer camera;
-parameter and recording controls remain unavailable.
+parameter controls remain unavailable. View has no recording controls.
 View interprets App flight-control values with local constants and a local
 readiness enum. The App–View flight link carries MAVLink messages only; it does
-not exchange `bullet_msgs` objects. Other View features still use `bullet_msgs`
-for parameter, recording, and status helpers.
+not exchange `bullet_msgs` objects. View owns its flight, parameter, and status
+message interpretation locally. The parameter tab remains disabled because
+the current App has no parameter responder. View no longer depends on
+`bullet_msgs`.
 
 View shows **SITL confirmed** when App's startup MSP board-info query returned
 `SITL`, **SITL not confirmed** when it did not, and **SITL status unknown**

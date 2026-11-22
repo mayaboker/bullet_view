@@ -46,7 +46,7 @@ def test_view_has_telemetry_and_parameters_tabs_and_renders_snapshot(application
         assert window.camera_frame.bbox == Bbox(True, 0., 0., 1., 1.)
         assert window.image_mode.currentText() == 'Remote'
         assert not window.image_mode.isEnabled()
-        assert not window.recording_panel.isEnabled()
+        assert not hasattr(window, 'recording_panel')
         assert not window.parameter_panel.isEnabled()
         assert not window.reload_profile.isEnabled()
         assert window.roll.parentWidget().objectName() == 'attitude_summary'
@@ -169,7 +169,7 @@ def test_clear_log_discards_presenter_history_details_and_keeps_receiving(applic
 
 
 def test_view_renders_simulation_time_camera_frame_and_retains_message_code(application):
-    from bullet_msgs.status_messages import status_text_chunks
+    from bullet_view.status_messages import status_text_chunks
     window = MainWindow(FakePresenter())
     try:
         text = status_text_chunks(7,'HOVER: settling',simulation_time_s=27.075,image_sequence=4809)[0]

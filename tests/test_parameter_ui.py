@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from PySide6 import QtCore, QtWidgets
 from pymavlink.dialects.v20 import common as wire
-from bullet_msgs.parameters import (BY_PATH, CATALOG, CATALOG_ID, CATALOG_VERSION,
+from bullet_view.parameter_protocol import (BY_PATH, CATALOG, CATALOG_ID, CATALOG_VERSION,
     REVISION_ID, PARAMETER_IDS, INT64, profile_values, encode_value)
 from bullet_view.parameters import ParameterClient, ParameterSnapshot, yaml_export
 from bullet_view.parameter_view import ParameterPanel

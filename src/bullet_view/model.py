@@ -1,6 +1,6 @@
 """Immutable telemetry state shared by the presenter and view."""
 from dataclasses import dataclass
-from bullet_msgs.status_messages import parse_status_text, STATUS_TIME_DECIMALS
+from .status_messages import parse_status_text, STATUS_TIME_DECIMALS
 
 
 @dataclass(frozen=True)

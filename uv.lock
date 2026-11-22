@@ -14,23 +14,6 @@ dependencies = [
 requires-dist = [{ name = "bullet-simulation-protocol", editable = "../bullet_drone/libs/bullet_simulation_protocol" }]
 
 [[package]]
-name = "bullet-msgs"
-version = "0.1.1"
-source = { editable = "../../workspaces/bullet/projects/bullet_msgs" }
-dependencies = [
-    { name = "pyzmq" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pyzmq", specifier = ">=27,<28" }]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "jsonschema", specifier = ">=4,<5" },
-    { name = "pytest", specifier = ">=9,<10" },
-]
-
-[[package]]
 name = "bullet-simulation-protocol"
 version = "0.1.0"
 source = { editable = "../bullet_drone/libs/bullet_simulation_protocol" }
@@ -47,7 +30,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "bullet-image-transport" },
-    { name = "bullet-msgs" },
     { name = "bullet-simulation-protocol" },
     { name = "pymavlink" },
     { name = "pyside6-essentials" },
@@ -62,7 +44,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bullet-image-transport", editable = "../bullet_drone/libs/bullet_image_transport" },
-    { name = "bullet-msgs", editable = "../../workspaces/bullet/projects/bullet_msgs" },
     { name = "bullet-simulation-protocol", editable = "../bullet_drone/libs/bullet_simulation_protocol" },
     { name = "pymavlink", specifier = ">=2.4,<3" },
     { name = "pyside6-essentials", specifier = ">=6.8,<7" },

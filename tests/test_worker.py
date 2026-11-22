@@ -8,7 +8,7 @@ import socket
 from threading import Thread
 from time import monotonic, sleep
 from pymavlink import mavutil
-from bullet_msgs.parameters import use_mavlink2
+from bullet_view.mavlink_v2 import use_mavlink2
 
 
 class Message:
@@ -150,6 +150,17 @@ def test_worker_accepts_upstream_rates_only_from_app():
         ('RATE', ('ATT_HZ', 49.5)), ('RATE', ('ALT_HZ', 48.0))]
 
 
+def test_worker_has_no_recording_command_or_state_path():
+    worker = MavlinkWorker('test')
+    assert not hasattr(worker, 'request_recording')
+    assert not hasattr(worker, 'recording')
+    updates = []
+    worker.update.connect(updates.append)
+    for name in ('REC_AUTH', 'REC_STATE'):
+        worker._emit_message(Message('NAMED_VALUE_FLOAT', name=name.encode(), value=1.), 1.)
+    assert updates == []
+
+
 def test_presenter_keeps_upstream_rates_in_snapshot():
     presenter = Presenter('test')
     presenter._on_update(TelemetryUpdate('RATE', ('ATT_HZ', 49.5), 1.))
@@ -244,7 +255,7 @@ def test_vertical_speed_estimator_filters_altitude_rate_and_resets_after_gap():
 
 
 def test_worker_parses_remote_status_context_without_arrival_time_substitution():
-    from bullet_msgs.status_messages import status_text_chunks
+    from bullet_view.status_messages import status_text_chunks
     worker = MavlinkWorker('test')
     updates = []
     worker.update.connect(updates.append)

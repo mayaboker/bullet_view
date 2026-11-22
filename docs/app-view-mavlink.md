@@ -116,11 +116,10 @@ View reads matching camera pixels directly from the local renderer's ZMQ/SHM
 stream on port 5556. The older bounding-box named-value parser remains for
 compatibility but does not drive the fid-matched overlay.
 
-View's worker can parse `DISTANCE_SENSOR` and recording named values, but the
-current App bridge does not publish them.
-Parameter and recording command code also remains in View, but the active
-worker loop does not dispatch those requests. They are not part of the active
-App–View MAVLink exchange described above.
+View's worker can parse `DISTANCE_SENSOR`, but the current App bridge does not
+publish it. Parameter command code remains in View, but the active worker loop
+does not dispatch those requests. View has no recording controls or recording
+MAVLink command and state handling.
 
 ## Implementation references
 

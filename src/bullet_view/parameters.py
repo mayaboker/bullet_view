@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
-from bullet_msgs.parameters import (CATALOG, BY_ID, PARAMETER_IDS, CATALOG_ID, CATALOG_VERSION,
+from .parameter_protocol import (CATALOG, BY_ID, PARAMETER_IDS, CATALOG_ID, CATALOG_VERSION,
     REVISION_ID, INT64, encode_value, decode_value, raw_value, profile_dict)
 
 PARAMETER_TIMEOUT_S = 1.

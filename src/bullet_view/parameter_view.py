@@ -1,6 +1,6 @@
 """Parameters tab widgets; protocol and file writes belong to the presenter."""
 from PySide6 import QtCore, QtWidgets
-from bullet_msgs.parameters import CATALOG, BY_ID
+from .parameter_protocol import CATALOG, BY_ID
 from .parameters import ParameterSnapshot, parse_edit
 
 PARAMETER_NAME_WIDTH = 260
