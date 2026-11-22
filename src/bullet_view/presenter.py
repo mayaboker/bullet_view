@@ -67,6 +67,8 @@ class Presenter(QtCore.QObject):
         self.endpoint = endpoint
         self.worker_factory = worker_factory
         self.clock = clock
+        self._heartbeat_wait_started_s = clock()
+        self._app_heartbeat_stale = False
         self.image_mode = 'local' if image_endpoint else image_mode
         self.matcher = FrameMatcher() if image_endpoint else None
         self.image_thread = QtCore.QThread(self) if image_endpoint else None
@@ -106,6 +108,7 @@ class Presenter(QtCore.QObject):
         self.timer.timeout.connect(self._refresh_freshness)
 
     def start(self):
+        self._heartbeat_wait_started_s = self.clock()
         self.thread.start()
         if self.image_thread is not None:
             self.image_thread.start()
@@ -216,9 +219,13 @@ class Presenter(QtCore.QObject):
     @QtCore.Slot(object)
     def _on_update(self, update):
         first_message = not self.snapshot.connected
+        was_heartbeat_stale = self._app_heartbeat_stale
+        if self.snapshot.error is not None:
+            self._heartbeat_wait_started_s = update.received_at_s
         values = dict(connected=True, last_message_at_s=update.received_at_s,
                       error=None)
         if update.kind == 'HEARTBEAT':
+            self._app_heartbeat_stale = False
             values['heartbeat_at_s'] = update.received_at_s
             values['heartbeat'] = update.value
             values['sitl_confirmed'] = (None if update.value is None else
@@ -244,31 +251,40 @@ class Presenter(QtCore.QObject):
                 if result is not None:
                     values['image'], values['bbox'] = result
         self.snapshot = replace(self.snapshot, **values)
-        if first_message:
+        if (first_message or was_heartbeat_stale) and update.kind == 'HEARTBEAT':
+            self._set_status('Connected')
+        elif first_message and not self._app_heartbeat_stale:
             self._set_status('Connected')
         self.snapshot_changed.emit(self.snapshot)
 
     @QtCore.Slot(str)
     def _on_failure(self, message):
         self.vertical_speed.reset()
+        self._app_heartbeat_stale = False
         self.snapshot = replace(self.snapshot, connected=False, error=message, rangefinder=None,
                                 attitude_hz=None, altitude_hz=None, sitl_confirmed=None)
         self._set_status('Disconnected: ' + message)
         self.snapshot_changed.emit(self.snapshot)
 
     def _refresh_freshness(self):
-        if (self.snapshot.sitl_confirmed is not None and self.snapshot.heartbeat_at_s is not None
-                and self.clock() - self.snapshot.heartbeat_at_s > HEARTBEAT_STALE_S):
-            self.snapshot = replace(self.snapshot, sitl_confirmed=None)
-            self.snapshot_changed.emit(self.snapshot)
+        now = self.clock()
+        heartbeat_reference = (self.snapshot.heartbeat_at_s if self.snapshot.heartbeat_at_s is not None
+                               else self._heartbeat_wait_started_s)
+        if self.snapshot.error is None and now - heartbeat_reference > HEARTBEAT_STALE_S:
+            if not self._app_heartbeat_stale:
+                self._app_heartbeat_stale = True
+                self._set_status('Telemetry stale')
+            if self.snapshot.sitl_confirmed is not None:
+                self.snapshot = replace(self.snapshot, sitl_confirmed=None)
+                self.snapshot_changed.emit(self.snapshot)
         if self.matcher is not None:
-            result = self.matcher.fallback(self.clock())
+            result = self.matcher.fallback(now)
             if result is not None:
                 self.snapshot = replace(self.snapshot, image=result[0], bbox=None)
                 self.snapshot_changed.emit(self.snapshot)
         if self.snapshot.last_message_at_s is None:
             return
-        age = self.clock() - self.snapshot.last_message_at_s
+        age = now - self.snapshot.last_message_at_s
         if age > STALE_AFTER_S and self.snapshot.connected:
             self.vertical_speed.reset()
             self.snapshot = replace(self.snapshot, connected=False, vertical_speed_m_s=None, rangefinder=None,
@@ -277,4 +293,4 @@ class Presenter(QtCore.QObject):
             self.snapshot_changed.emit(self.snapshot)
 
     def _set_status(self, message):
-        self.status_changed.emit(message)
+        self.status_changed.emit('Telemetry stale' if getattr(self, '_app_heartbeat_stale', False) else message)

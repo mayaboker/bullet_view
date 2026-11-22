@@ -125,7 +125,7 @@ MAVLink command and state handling.
 
 - App endpoints, command validation, ACKs, and telemetry: `bullet_app/src/bullet_app/view_link.py`
 - App flight states and request constraints: `bullet_app/src/bullet_app/missions/base.py`
-- App SITL connections and control loop: `bullet_app/src/bullet_app/mission.py`
+- App SITL connections and control loop: `bullet_app/src/bullet_app/app.py`
 - View endpoints: `bullet_view/src/bullet_view/main.py`
 - View send/receive loop: `bullet_view/src/bullet_view/worker.py`
 - View single-peer UDP transport: `bullet_view/src/bullet_view/peer_udp.py`

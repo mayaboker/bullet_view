@@ -239,6 +239,42 @@ def test_presenter_sitl_confirmation_expires_with_heartbeat():
     assert presenter.snapshot.sitl_confirmed is None
 
 
+def test_presenter_reports_stale_app_heartbeat_while_other_packets_continue():
+    now = [1.0]
+    presenter = Presenter('test', clock=lambda: now[0])
+    statuses = []
+    presenter.status_changed.connect(statuses.append)
+    presenter._on_update(TelemetryUpdate('HEARTBEAT', Heartbeat(0, 1, 3, 1.), 1.0))
+    now[0] = 4.1
+    presenter._on_update(TelemetryUpdate('RATE', ('ATT_HZ', 50.0), 4.1))
+    presenter._refresh_freshness()
+    assert presenter.snapshot.connected
+    assert presenter.snapshot.sitl_confirmed is None
+    assert statuses[-1] == 'Telemetry stale'
+    count = len(statuses)
+    presenter._on_update(TelemetryUpdate('RATE', ('ATT_HZ', 50.0), 4.2))
+    presenter._refresh_freshness()
+    assert len(statuses) == count
+    presenter._on_update(TelemetryUpdate('HEARTBEAT', Heartbeat(0, 1, 3, 4.3), 4.3))
+    assert statuses[-1] == 'Connected'
+    assert presenter.snapshot.sitl_confirmed is True
+
+
+def test_presenter_reports_stale_when_no_app_heartbeat_arrives():
+    now = [1.0]
+    presenter = Presenter('test', clock=lambda: now[0])
+    statuses = []
+    presenter.status_changed.connect(statuses.append)
+    now[0] = 4.1
+    presenter._refresh_freshness()
+    assert statuses == ['Telemetry stale']
+    assert not presenter.snapshot.connected
+    presenter._on_update(TelemetryUpdate('RATE', ('ATT_HZ', 50.0), 4.1))
+    presenter._refresh_freshness()
+    assert statuses[-1] == 'Telemetry stale'
+    assert presenter.snapshot.connected
+
+
 def test_presenter_retains_status_messages_in_snapshot():
     presenter = Presenter('test')
     presenter._on_update(TelemetryUpdate('STATUSTEXT', StatusText(2, 4, '[02] warning', 1.), 1.))

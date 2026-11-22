@@ -14,6 +14,7 @@ WINDOW_WIDTH = 1360
 WINDOW_HEIGHT = 900
 CAMERA_MIN_WIDTH = 400
 ALTITUDE_MIN_WIDTH = 160
+TELEMETRY_WIDGET_MIN_HEIGHT = 300
 MESSAGE_DETAILS_PLACEHOLDER = 'Select a message to inspect its description.'
 PITCH_PIXELS_PER_RAD = 85.
 MAX_ALTITUDE_M = 100.
@@ -30,13 +31,14 @@ SEVERITY_COLORS = {
     2: '#ff5b7f',
 }
 RATE_SOURCE_COLORS = {None: '#9bb0c8', True: '#ef6b73', False: '#70d6ad'}
+TELEMETRY_STALE_COLOR = '#ef6b73'
 
 
 class FlightBall(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.attitude = None
-        self.setMinimumSize(360, 360)
+        self.setMinimumSize(360, TELEMETRY_WIDGET_MIN_HEIGHT)
         self.setAccessibleName('Flight attitude ball')
 
     def set_attitude(self, attitude):
@@ -97,7 +99,7 @@ class AltitudeWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.altitude_m = None
-        self.setMinimumSize(ALTITUDE_MIN_WIDTH, 360)
+        self.setMinimumSize(ALTITUDE_MIN_WIDTH, TELEMETRY_WIDGET_MIN_HEIGHT)
         self.setAccessibleName('Altitude gauge')
 
     def set_altitude(self, altitude):
@@ -131,7 +133,7 @@ class VerticalSpeedWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.vertical_speed_m_s = None
-        self.setMinimumSize(150, 360)
+        self.setMinimumSize(150, TELEMETRY_WIDGET_MIN_HEIGHT)
         self.setAccessibleName('Vertical speed gauge')
 
     def set_vertical_speed(self, vertical_speed_m_s):
@@ -173,7 +175,7 @@ class RangefinderWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.rangefinder = None
-        self.setMinimumSize(150, 360)
+        self.setMinimumSize(150, TELEMETRY_WIDGET_MIN_HEIGHT)
         self.setAccessibleName('AGL rangefinder gauge')
 
     def set_rangefinder(self, rangefinder):
@@ -210,7 +212,7 @@ class CameraFrame(QtWidgets.QWidget):
         self.image = None
         self.bbox = None
         self.mode = 'local'
-        self.setMinimumSize(CAMERA_MIN_WIDTH, 360)
+        self.setMinimumSize(CAMERA_MIN_WIDTH, TELEMETRY_WIDGET_MIN_HEIGHT)
         self.setAccessibleName('Camera image')
 
     def set_frame(self, frame: ImageFrame | None, bbox: Bbox | None):
@@ -312,6 +314,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.telemetry_tab = QtWidgets.QWidget()
         self.telemetry_scroll = QtWidgets.QScrollArea()
         self.telemetry_scroll.setWidgetResizable(True)
+        self.telemetry_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.telemetry_scroll.setWidget(self.telemetry_tab)
         self.parameters_tab = QtWidgets.QWidget()
         self.tabs.addTab(self.telemetry_scroll, 'Telemetry')
@@ -324,7 +327,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.camera_frame.set_mode(self.image_mode.currentText().lower())
         self.setCentralWidget(root)
         presenter.snapshot_changed.connect(self.set_snapshot)
-        presenter.status_changed.connect(self.status.setText)
+        presenter.status_changed.connect(self._set_status)
         if hasattr(presenter, 'messages_cleared'):
             presenter.messages_cleared.connect(self._clear_message_log)
 
@@ -389,6 +392,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.message_log = QtWidgets.QListWidget()
         self.message_log.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         self.message_log.setUniformItemSizes(True)
+        self.message_log.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.message_log.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.message_log.setMinimumHeight(125)
         self.message_log.setAccessibleName('Mission status message log')
         self.message_log.itemClicked.connect(self._show_message_details)
@@ -448,7 +453,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.message_log.addItem(item)
         self._message_count = len(snapshot.messages)
         if new_messages and self.auto_scroll.isChecked():
-            self.message_log.scrollToBottom()
+            self._scroll_to_latest_message()
         elif new_messages:
             self.message_log.verticalScrollBar().setValue(scroll_position)
         if snapshot.attitude is None:
@@ -466,9 +471,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._message_count = 0
         self.message_details.setText(MESSAGE_DETAILS_PLACEHOLDER)
 
+    @QtCore.Slot(str)
+    def _set_status(self, message):
+        self.status.setText(message)
+        self.status.setStyleSheet(f'color: {TELEMETRY_STALE_COLOR}; font-weight: 700;'
+                                  if message == 'Telemetry stale' else '')
+
     def _set_auto_scroll(self, enabled):
         if enabled:
-            self.message_log.scrollToBottom()
+            self._scroll_to_latest_message()
+
+    def _scroll_to_latest_message(self):
+        self.message_log.scrollToBottom()
+        self.telemetry_scroll.ensureWidgetVisible(self.message_log)
 
     def _show_message_details(self, item):
         message = item.data(QtCore.Qt.ItemDataRole.UserRole)
