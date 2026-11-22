@@ -10,4 +10,4 @@ Verification: The View suite passed offscreen (85 tests, one skipped). A new wor
 
 Scope/defaults: Remove View recording controls only; do not alter any external recorder or Bullet App. Preserve the uncommitted local parameter protocol work.
 
-Status: Implemented and verified. Implementation commit: Pending (no commit requested).
+Status: Implemented and verified. Implementation commit: `007da997731b1688616629c9f83e2418b1c85d86`.

@@ -10,4 +10,4 @@ Verification: The View suite passed offscreen with the locked environment (87 te
 
 Scope/defaults: Preserve the existing uncommitted parameter and recording changes. Do not change Bullet App or the external `bullet_msgs` package.
 
-Status: Implemented and verified. Implementation commit: Pending (no commit requested).
+Status: Implemented and verified. Implementation commit: `007da997731b1688616629c9f83e2418b1c85d86`.

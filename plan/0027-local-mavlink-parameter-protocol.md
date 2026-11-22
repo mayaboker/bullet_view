@@ -10,4 +10,4 @@ Verification: View's offscreen suite passed (93 tests, one skipped). New indepen
 
 Scope/defaults: Keep the existing static catalog as View-owned metadata because MAVLink Extended Parameters do not carry UI descriptions, categories, YAML paths, or live-edit policy. Leave unrelated recording and status helpers untouched.
 
-Status: Implemented and verified. Implementation commit: Pending (no commit requested).
+Status: Implemented and verified. Implementation commit: `007da997731b1688616629c9f83e2418b1c85d86`.
