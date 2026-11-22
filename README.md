@@ -6,6 +6,10 @@ View returns its heartbeat and flight commands on that same UDP socket and
 receives command ACKs there. It does not connect to Betaflight SITL. With
 `--image-endpoint`, it subscribes directly to the local renderer camera;
 parameter and recording controls remain unavailable.
+View interprets App flight-control values with local constants and a local
+readiness enum. The App–View flight link carries MAVLink messages only; it does
+not exchange `bullet_msgs` objects. Other View features still use `bullet_msgs`
+for parameter, recording, and status helpers.
 
 View shows **SITL confirmed** when App's startup MSP board-info query returned
 `SITL`, **SITL not confirmed** when it did not, and **SITL status unknown**

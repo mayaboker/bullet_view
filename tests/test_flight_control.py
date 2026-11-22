@@ -6,7 +6,7 @@ import pytest
 from PySide6 import QtCore, QtWidgets
 from bullet_view.flight_control import FlightClient, FlightSnapshot, flight_action_block_reason
 from bullet_view.flight_view import FlightPanel
-from bullet_msgs.flight_control import *
+from bullet_view.flight_protocol import *
 
 
 def packet(**fields):
@@ -37,9 +37,23 @@ def test_height_is_set_by_mission_profile():
     c, mav, outputs, sent = client()
     assert c.remote.height_m is None
     state(c, 1.)
+    assert c.remote.readiness is Readiness.DISARMED_IDLE
     with pytest.raises(ValueError, match='manual target mission'):
         c.request('height', 5.5, mav, 1.1)
     assert sent == [] and c.remote.height_m == 20.
+
+
+def test_flight_protocol_uses_view_local_mavlink_definitions():
+    from pathlib import Path
+
+    source_root = Path(__file__).resolve().parents[1] / 'src' / 'bullet_view'
+    for name in ('flight_protocol.py', 'flight_control.py', 'flight_view.py'):
+        source = (source_root / name).read_text()
+        assert 'bullet_msgs' not in source
+    worker_source = (source_root / 'worker.py').read_text()
+    assert 'bullet_msgs.flight_control' not in worker_source
+    assert 'bullet_msgs.spawn' not in worker_source
+    assert tuple(int(value) for value in Readiness) == (0, 1, 2, 3, 4)
 
 
 def test_target_height_requires_ack_and_observed_value():

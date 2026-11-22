@@ -1,10 +1,10 @@
 """Worker-owned flight protocol client; no widgets or flight inference."""
 from dataclasses import dataclass
 from math import isfinite
-from bullet_msgs.flight_control import (FlightState, FLIGHT_NAMES, ARM_DISARM_COMMAND,
+from .flight_protocol import (FlightState, FLIGHT_NAMES, ARM_DISARM_COMMAND,
     MISSION_START_COMMAND, TAKEOFF_HEIGHT_COMMAND, FORCE_DISARM_MAGIC, COMMAND_TIMEOUT_S,
-    STATE_STALE_S, HEIGHT_TOLERANCE_M, DISARMED_IDLE, ARMED_IDLE, FLYING, RESET_REQUIRED, ACTION_IDS, parse_command)
-from bullet_msgs.spawn import MIN_TAKEOFF_HEIGHT_M, MAX_TAKEOFF_HEIGHT_M
+    STATE_STALE_S, HEIGHT_TOLERANCE_M, MIN_TAKEOFF_HEIGHT_M, MAX_TAKEOFF_HEIGHT_M,
+    DISARMED_IDLE, ARMED_IDLE, FLYING, RESET_REQUIRED, ACTION_IDS, Readiness, parse_command)
 from .parameters import GCS_SYSTEM_ID, GCS_COMPONENT_ID
 
 APP_TARGET = (1, 1)
@@ -151,11 +151,12 @@ class FlightClient:
         self.known_target = target
         valid = p['ARM_VALID'] == 1 and p['ARM_MODE'] in (0., 1.)
         readiness = p['MIS_READY']
-        if not isfinite(readiness) or readiness not in range(5):
+        if not isfinite(readiness) or readiness not in range(len(Readiness)):
             valid = False
         height = p['TAKEOFF_H']
         self.remote = FlightState(bool(p['ARM_MODE']) if valid else None, valid,
-            int(readiness) if valid else 0, height if valid and isfinite(height) else None, now, target)
+            Readiness(int(readiness)) if valid else Readiness.UNAVAILABLE,
+            height if valid and isfinite(height) else None, now, target)
         self._complete(now)
         self.notify()
 

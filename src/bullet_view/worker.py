@@ -4,7 +4,7 @@ from queue import Queue, Empty, Full
 from bullet_msgs.parameters import use_mavlink2
 from bullet_msgs.status_messages import parse_status_text
 from .parameters import ParameterClient, GCS_SYSTEM_ID, GCS_COMPONENT_ID
-from bullet_msgs.flight_control import FLIGHT_NAMES, FLIGHT_COMMANDS
+from .flight_protocol import FLIGHT_NAMES, FLIGHT_COMMANDS
 from .flight_control import FlightClient, LAND_COMMAND, APP_TARGET
 from bullet_msgs.mavlink_control import RECORDING_NAMES, RECORDING_CONTROL_COMMAND
 from .recording_control import RecordingClient

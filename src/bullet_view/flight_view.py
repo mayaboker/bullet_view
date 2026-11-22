@@ -1,7 +1,7 @@
 """Mission approval and abort controls; network IO stays in the worker."""
 from PySide6 import QtCore, QtWidgets
-from bullet_msgs.spawn import MIN_TAKEOFF_HEIGHT_M, MAX_TAKEOFF_HEIGHT_M, DEFAULT_TAKEOFF_HEIGHT_M
-from bullet_msgs.flight_control import FLYING, HEIGHT_STEP_M
+from .flight_protocol import (MIN_TAKEOFF_HEIGHT_M, MAX_TAKEOFF_HEIGHT_M,
+                              DEFAULT_TAKEOFF_HEIGHT_M, FLYING, HEIGHT_STEP_M)
 from .flight_control import FlightSnapshot, flight_action_block_reason
 
 HEIGHT_SLIDER_SCALE = 10
