@@ -10,4 +10,4 @@ Verification: The View suite passed offscreen (90 tests, one skipped), including
 
 Scope/defaults: The separate parameter, recording, and status features remain outside this flight-control refactor. Their existing `bullet_msgs` dependency remains.
 
-Status: Implemented and verified. Implementation commit: Pending (no commit requested).
+Status: Implemented and verified. Implementation commit: `16fa5d69ec40568f7a2378df90da2ad8bdf6192a`.
