@@ -1,6 +1,15 @@
 # Release Log — alice branch (changes from 0.1-alpha)
 
-## bullet_view
+## 0.2-alice (changes from 0.1-alice)
+
+- Merged bob branch (9 commits): MAVLink flight protocol, parameter catalog,
+  SITL/HW status display, target altitude slider, telemetry stale status,
+  status messages. Removed recording controls and bullet-msgs dependency.
+
+- pyproject.toml/uv.lock: took bob's removal of bullet-msgs (supersedes
+  alice's path fix).
+
+## 0.1-alice (changes from 0.1-alpha)
 
 1 commit, 3 files changed, +90 / -3 lines.
 
@@ -15,8 +24,7 @@
 ### Modified files
 
 - `pyproject.toml`
-  Fixed bullet-msgs source path from `../../workspaces/bullet/projects/bullet_msgs`
-  to `../bullet_msgs` (sibling project layout).
+  Fixed bullet-msgs source path (superseded by bob's removal in 0.2-alice).
 
 - `uv.lock`
   Updated to match the corrected bullet-msgs path.
