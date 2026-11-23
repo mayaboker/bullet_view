@@ -1,0 +1,30 @@
+# Release Log — alice branch (changes from 0.1-alpha)
+
+## 0.2-alice (changes from 0.1-alice)
+
+- Merged bob branch (9 commits): MAVLink flight protocol, parameter catalog,
+  SITL/HW status display, target altitude slider, telemetry stale status,
+  status messages. Removed recording controls and bullet-msgs dependency.
+
+- pyproject.toml/uv.lock: took bob's removal of bullet-msgs (supersedes
+  alice's path fix).
+
+## 0.1-alice (changes from 0.1-alpha)
+
+1 commit, 3 files changed, +90 / -3 lines.
+
+### New files
+
+- `quick_view.py` (87 lines)
+  Minimal PySide6 image viewer. Subscribes to SHM camera frames via ZMQ,
+  displays them in a window with frame count and fid in the status bar.
+  No bullet_msgs dependency. Useful for quick visual checks of the Isaac
+  or Godot renderer output.
+
+### Modified files
+
+- `pyproject.toml`
+  Fixed bullet-msgs source path (superseded by bob's removal in 0.2-alice).
+
+- `uv.lock`
+  Updated to match the corrected bullet-msgs path.
