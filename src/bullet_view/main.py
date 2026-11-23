@@ -8,6 +8,8 @@ from PySide6 import QtCore, QtWidgets
 from .presenter import Presenter
 from .view import MainWindow
 from .desktop import add_launcher_arguments, handle_launcher_arguments, configure_application
+from bullet_simulation_protocol import validate_endpoint
+from bullet_simulation_protocol.state import DEFAULT_CONTROL_ENDPOINT, DEFAULT_STATE_ENDPOINT
 
 
 DEFAULT_ENDPOINT = 'udpin:127.0.0.1:14550'
@@ -45,12 +47,21 @@ def main(argv=None):
     parser.add_argument('--mavlink-endpoint', default=DEFAULT_ENDPOINT,
                         help='App MAVLink UDP listener (udpin:HOST:PORT)')
     parser.add_argument('--image-endpoint', help='Local renderer image ZMQ endpoint (tcp://HOST:PORT)')
+    parser.add_argument('--simulation-control-endpoint', default=DEFAULT_CONTROL_ENDPOINT,
+                        help='Launcher simulation command endpoint')
+    parser.add_argument('--simulation-state-endpoint', default=DEFAULT_STATE_ENDPOINT,
+                        help='Launcher simulation state publisher endpoint')
     parser.add_argument('--monitor', help='Qt screen name for the Bullet View window')
     parser.add_argument('--monitor-half', choices=('top', 'bottom'),
                         help='Use the top or bottom half of --monitor')
     args = parser.parse_args(argv)
     if args.monitor_half and not args.monitor:
         parser.error('--monitor-half requires --monitor')
+    for endpoint in (args.simulation_control_endpoint, args.simulation_state_endpoint):
+        try:
+            validate_endpoint(endpoint)
+        except ValueError as error:
+            parser.error(str(error))
     try:
         setup = handle_launcher_arguments(args)
     except (OSError, ValueError) as error:
@@ -59,7 +70,9 @@ def main(argv=None):
         return setup
     application = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
     configure_application(application)
-    presenter = Presenter(args.mavlink_endpoint, image_endpoint=args.image_endpoint)
+    presenter = Presenter(args.mavlink_endpoint, image_endpoint=args.image_endpoint,
+                          simulation_control_endpoint=args.simulation_control_endpoint,
+                          simulation_state_endpoint=args.simulation_state_endpoint)
     window = MainWindow(presenter)
     place_on_monitor(window, application, args.monitor, args.monitor_half)
     window.show()

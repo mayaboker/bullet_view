@@ -6,9 +6,13 @@ from math import isfinite
 ARM_DISARM_COMMAND = 400
 MISSION_START_COMMAND = 300
 TAKEOFF_HEIGHT_COMMAND = 31012
-FLIGHT_COMMANDS = frozenset((ARM_DISARM_COMMAND, MISSION_START_COMMAND, TAKEOFF_HEIGHT_COMMAND))
+APP_RESTART_COMMAND = 31013
+FLIGHT_COMMANDS = frozenset((ARM_DISARM_COMMAND, MISSION_START_COMMAND,
+                            TAKEOFF_HEIGHT_COMMAND, APP_RESTART_COMMAND))
 FORCE_DISARM_MAGIC = 21196
 ACTION_IDS = {'arm': 1, 'disarm': 2, 'emergency': 3, 'start': 4, 'height': 5, 'invalid': 0}
+APP_STATES = {0.: 'disabled', 1.: 'ready', 2.: 'restart_required',
+              3.: 'restarting', 4.: 'restart_failed'}
 COMMAND_TIMEOUT_S = 5.0
 STATE_STALE_S = 0.75
 HEIGHT_STEP_M = 0.1
@@ -66,4 +70,6 @@ def parse_command(command, params):
         if abs(first / HEIGHT_STEP_M - round(first / HEIGHT_STEP_M)) > 0.001:
             raise ValueError('Height requires 0.1 m steps')
         return 'height', round(first, 1)
+    elif command == APP_RESTART_COMMAND and first == second == 0:
+        return 'restart', None
     raise ValueError('Unsupported flight parameters')

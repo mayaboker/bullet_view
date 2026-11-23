@@ -8,6 +8,7 @@ from .status_messages import (MAV_SEVERITY_ERROR, MAV_SEVERITY_INFO, MAV_SEVERIT
 from .model import Bbox, ImageFrame, TelemetrySnapshot
 from .parameter_view import ParameterPanel
 from .flight_view import FlightPanel
+from .simulation_view import SimulationPanel
 
 
 WINDOW_WIDTH = 1360
@@ -317,8 +318,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.telemetry_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.telemetry_scroll.setWidget(self.telemetry_tab)
         self.parameters_tab = QtWidgets.QWidget()
+        self.simulation_tab = SimulationPanel(presenter)
         self.tabs.addTab(self.telemetry_scroll, 'Telemetry')
         self.tabs.addTab(self.parameters_tab, 'Parameters')
+        self.tabs.addTab(self.simulation_tab, 'Simulation')
         outer.addWidget(self.tabs, 1)
         self._build_telemetry()
         self._build_parameters()

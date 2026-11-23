@@ -192,7 +192,8 @@ class MavlinkWorker(QtCore.QObject):
                         and isfinite(float(message.value)) and float(message.value) >= 0):
                     self.update.emit(TelemetryUpdate('RATE', (name, float(message.value)), received_at_s))
                 return
-            if name in FLIGHT_NAMES or name in ('APP_MODE', 'APP_PHASE', 'APP_MSN', 'APP_RESULT', 'VIS_READY'):
+            if name in FLIGHT_NAMES or name in ('APP_MODE', 'APP_PHASE', 'APP_MSN', 'APP_RESULT',
+                                                'APP_STATE', 'APP_EPOCH', 'VIS_READY'):
                 self.flight.named(message, name, received_at_s)
                 return
             if name not in BBOX_NAMES:
