@@ -28,5 +28,5 @@ testpaths = ["tests"]
 
 [tool.uv.sources]
 bullet-image-transport = { path = "../bullet_drone/libs/bullet_image_transport", editable = true }
-bullet-msgs = { path = "../../workspaces/bullet/projects/bullet_msgs", editable = true }
+bullet-msgs = { path = "../bullet_msgs", editable = true }
 bullet-simulation-protocol = { path = "../bullet_drone/libs/bullet_simulation_protocol", editable = true }
