@@ -1,10 +1,10 @@
 """Worker-owned flight protocol client; no widgets or flight inference."""
 from dataclasses import dataclass
 from math import isfinite
-from bullet_msgs.flight_control import (FlightState, FLIGHT_NAMES, ARM_DISARM_COMMAND,
+from .flight_protocol import (FlightState, FLIGHT_NAMES, ARM_DISARM_COMMAND,
     MISSION_START_COMMAND, TAKEOFF_HEIGHT_COMMAND, FORCE_DISARM_MAGIC, COMMAND_TIMEOUT_S,
-    STATE_STALE_S, HEIGHT_TOLERANCE_M, DISARMED_IDLE, ARMED_IDLE, FLYING, RESET_REQUIRED, ACTION_IDS, parse_command)
-from bullet_msgs.spawn import MIN_TAKEOFF_HEIGHT_M, MAX_TAKEOFF_HEIGHT_M
+    STATE_STALE_S, HEIGHT_TOLERANCE_M, MIN_TAKEOFF_HEIGHT_M, MAX_TAKEOFF_HEIGHT_M,
+    DISARMED_IDLE, ARMED_IDLE, FLYING, RESET_REQUIRED, ACTION_IDS, Readiness, parse_command)
 from .parameters import GCS_SYSTEM_ID, GCS_COMPONENT_ID
 
 APP_TARGET = (1, 1)
@@ -28,6 +28,7 @@ class FlightSnapshot:
     mission: str = 'unknown'
     mission_result: str = 'pending'
     vision_ready: bool = False
+    hover_s: float | None = None
 
 
 def flight_action_block_reason(snapshot, action, height_m=None, *, now=None):
@@ -42,7 +43,7 @@ def flight_action_block_reason(snapshot, action, height_m=None, *, now=None):
         return 'Waiting for fresh arming feedback'
     if snapshot.pending is not None:
         return f'Waiting for {snapshot.pending} confirmation'
-    if snapshot.mission == 'target-hit' and snapshot.mission_result != 'pending' and action in ('arm', 'start'):
+    if snapshot.mission == 'target-hit' and snapshot.mission_result != 'pending' and action in ('arm', 'start', 'height'):
         return 'Target mission completed; restart App and launcher'
     if remote.readiness == RESET_REQUIRED:
         return 'Stop/reset required before arming'
@@ -67,6 +68,11 @@ def flight_action_block_reason(snapshot, action, height_m=None, *, now=None):
         if remote.readiness != FLYING or snapshot.phase not in ('takeoff', 'hover', 'search',
                                                                  'center', 'settle', 'los', 'commit'):
             return 'Active flight required to land'
+    elif action == 'height':
+        if snapshot.mode != 'manual' or snapshot.mission != 'target-hit':
+            return 'Height requires manual target mission'
+        if remote.readiness not in (DISARMED_IDLE, ARMED_IDLE):
+            return 'Height requires idle flight before Start'
     else:
         raise ValueError('Unknown flight availability action')
     return None
@@ -87,11 +93,12 @@ class FlightClient:
         self.mission = 'unknown'
         self.mission_result = 'pending'
         self.vision_ready = False
+        self.hover_s = None
 
     def snapshot(self):
         return FlightSnapshot(self.remote, None if self.pending is None else self.pending['action'], self.result,
                               self.control_available, self.mode, self.phase, self.mission, self.mission_result,
-                              self.vision_ready)
+                              self.vision_ready, self.hover_s)
 
     def set_available(self, available):
         self.control_available = available
@@ -126,6 +133,11 @@ class FlightClient:
             self._complete(now)
             self.notify()
             return
+        if name == 'HOVER_S':
+            value = float(message.value)
+            self.hover_s = value if isfinite(value) else None
+            self.notify()
+            return
         if self.stamp is not None:
             delta = (message.time_boot_ms - self.stamp) % 2**32
             if delta >= 2**31:
@@ -139,18 +151,19 @@ class FlightClient:
         self.known_target = target
         valid = p['ARM_VALID'] == 1 and p['ARM_MODE'] in (0., 1.)
         readiness = p['MIS_READY']
-        if not isfinite(readiness) or readiness not in range(5):
+        if not isfinite(readiness) or readiness not in range(len(Readiness)):
             valid = False
         height = p['TAKEOFF_H']
         self.remote = FlightState(bool(p['ARM_MODE']) if valid else None, valid,
-            int(readiness) if valid else 0, height if valid and isfinite(height) else None, now, target)
+            Readiness(int(readiness)) if valid else Readiness.UNAVAILABLE,
+            height if valid and isfinite(height) else None, now, target)
         self._complete(now)
         self.notify()
 
     def request(self, action, value, mav, now):
         if not self.control_available:
             raise ValueError('Flight control connection unavailable')
-        if action in ('arm', 'start', 'land'):
+        if action in ('arm', 'start', 'land', 'height'):
             reason = flight_action_block_reason(self.snapshot(), action, value, now=now)
             if reason is not None:
                 raise ValueError(reason)
@@ -164,8 +177,9 @@ class FlightClient:
         remote = self.remote
         if not disarm and (not remote.valid or now - remote.received_at_s > STATE_STALE_S):
             raise ValueError('Fresh remote flight state required')
-        if action == 'height':
-            raise ValueError('Height is fixed by the mission profile')
+        if action == 'height' and (type(value) not in (int, float) or not isfinite(value)
+                                   or not MIN_TAKEOFF_HEIGHT_M <= value <= MAX_TAKEOFF_HEIGHT_M):
+            raise ValueError('Target height must be 0.1–100 m')
         if action == 'disarm' and (not remote.valid or remote.readiness == FLYING):
             raise ValueError('Emergency confirmation required')
         command = (TAKEOFF_HEIGHT_COMMAND if action == 'height' else
@@ -236,5 +250,6 @@ class FlightClient:
         self.pending = None
         self.mode = 'unknown'
         self.phase = 'unknown'
+        self.hover_s = None
         self.result = 'Flight control connection unavailable'
         self.notify()

@@ -10,10 +10,11 @@ from .parameters import ParameterSnapshot, save_yaml
 from .worker import MavlinkWorker
 from .image_stream import ImageWorker, FrameMatcher
 from .flight_control import FlightSnapshot, flight_action_block_reason
-from .recording_control import RecordingSnapshot
 
 
 STALE_AFTER_S = .75
+HEARTBEAT_STALE_S = 3.0
+SITL_CONFIRMED_CUSTOM_MODE = 1 << 0
 VIEW_REFRESH_PERIOD_MS = 100
 VERTICAL_SPEED_FILTER_ALPHA = .25
 VERTICAL_SPEED_RESET_GAP_S = 1.
@@ -58,7 +59,6 @@ class Presenter(QtCore.QObject):
     messages_cleared = QtCore.Signal()
     parameters_changed = QtCore.Signal(object)
     flight_changed = QtCore.Signal(object)
-    recording_changed = QtCore.Signal(object)
 
     def __init__(self, endpoint, *, image_mode='remote', image_endpoint=None,
                  worker_factory=MavlinkWorker, image_worker_factory=ImageWorker,
@@ -67,6 +67,8 @@ class Presenter(QtCore.QObject):
         self.endpoint = endpoint
         self.worker_factory = worker_factory
         self.clock = clock
+        self._heartbeat_wait_started_s = clock()
+        self._app_heartbeat_stale = False
         self.image_mode = 'local' if image_endpoint else image_mode
         self.matcher = FrameMatcher() if image_endpoint else None
         self.image_thread = QtCore.QThread(self) if image_endpoint else None
@@ -82,7 +84,6 @@ class Presenter(QtCore.QObject):
         self.parameter_snapshot = ParameterSnapshot()
         self.flight_snapshot = FlightSnapshot()
         self._queued_flight_action = None
-        self.recording_snapshot = RecordingSnapshot()
         self._export_destination = None
         self._export_sync_started = False
         self.vertical_speed = VerticalSpeedEstimator()
@@ -100,8 +101,6 @@ class Presenter(QtCore.QObject):
             self.worker.flight_changed.connect(self._on_flight)
         if hasattr(self.worker, 'flight_request_handled'):
             self.worker.flight_request_handled.connect(self._on_flight_request_handled)
-        if hasattr(self.worker, 'recording_changed'):
-            self.worker.recording_changed.connect(self._on_recording)
         self.worker.finished.connect(self.thread.quit)
         self.thread.finished.connect(self.worker.deleteLater)
         self.timer = QtCore.QTimer(self)
@@ -109,6 +108,7 @@ class Presenter(QtCore.QObject):
         self.timer.timeout.connect(self._refresh_freshness)
 
     def start(self):
+        self._heartbeat_wait_started_s = self.clock()
         self.thread.start()
         if self.image_thread is not None:
             self.image_thread.start()
@@ -192,14 +192,6 @@ class Presenter(QtCore.QObject):
             self._queued_flight_action = previous_queued
             self._on_flight(previous)
 
-    @QtCore.Slot(object)
-    def _on_recording(self, snapshot):
-        self.recording_snapshot = snapshot
-        self.recording_changed.emit(snapshot)
-
-    def request_recording(self, start):
-        self.worker.request_recording(start)
-
     def apply_parameter(self, id, value):
         self.worker.set_parameter(id, value)
 
@@ -227,11 +219,17 @@ class Presenter(QtCore.QObject):
     @QtCore.Slot(object)
     def _on_update(self, update):
         first_message = not self.snapshot.connected
+        was_heartbeat_stale = self._app_heartbeat_stale
+        if self.snapshot.error is not None:
+            self._heartbeat_wait_started_s = update.received_at_s
         values = dict(connected=True, last_message_at_s=update.received_at_s,
                       error=None)
         if update.kind == 'HEARTBEAT':
+            self._app_heartbeat_stale = False
             values['heartbeat_at_s'] = update.received_at_s
             values['heartbeat'] = update.value
+            values['sitl_confirmed'] = (None if update.value is None else
+                                        bool(update.value.custom_mode & SITL_CONFIRMED_CUSTOM_MODE))
             values['mission_stopped'] = (update.value is not None
                                           and update.value.system_status != mavutil.mavlink.MAV_STATE_ACTIVE)
         elif update.kind == 'ATTITUDE':
@@ -253,33 +251,46 @@ class Presenter(QtCore.QObject):
                 if result is not None:
                     values['image'], values['bbox'] = result
         self.snapshot = replace(self.snapshot, **values)
-        if first_message:
+        if (first_message or was_heartbeat_stale) and update.kind == 'HEARTBEAT':
+            self._set_status('Connected')
+        elif first_message and not self._app_heartbeat_stale:
             self._set_status('Connected')
         self.snapshot_changed.emit(self.snapshot)
 
     @QtCore.Slot(str)
     def _on_failure(self, message):
         self.vertical_speed.reset()
+        self._app_heartbeat_stale = False
         self.snapshot = replace(self.snapshot, connected=False, error=message, rangefinder=None,
-                                attitude_hz=None, altitude_hz=None)
+                                attitude_hz=None, altitude_hz=None, sitl_confirmed=None)
         self._set_status('Disconnected: ' + message)
         self.snapshot_changed.emit(self.snapshot)
 
     def _refresh_freshness(self):
+        now = self.clock()
+        heartbeat_reference = (self.snapshot.heartbeat_at_s if self.snapshot.heartbeat_at_s is not None
+                               else self._heartbeat_wait_started_s)
+        if self.snapshot.error is None and now - heartbeat_reference > HEARTBEAT_STALE_S:
+            if not self._app_heartbeat_stale:
+                self._app_heartbeat_stale = True
+                self._set_status('Telemetry stale')
+            if self.snapshot.sitl_confirmed is not None:
+                self.snapshot = replace(self.snapshot, sitl_confirmed=None)
+                self.snapshot_changed.emit(self.snapshot)
         if self.matcher is not None:
-            result = self.matcher.fallback(self.clock())
+            result = self.matcher.fallback(now)
             if result is not None:
                 self.snapshot = replace(self.snapshot, image=result[0], bbox=None)
                 self.snapshot_changed.emit(self.snapshot)
         if self.snapshot.last_message_at_s is None:
             return
-        age = self.clock() - self.snapshot.last_message_at_s
+        age = now - self.snapshot.last_message_at_s
         if age > STALE_AFTER_S and self.snapshot.connected:
             self.vertical_speed.reset()
             self.snapshot = replace(self.snapshot, connected=False, vertical_speed_m_s=None, rangefinder=None,
-                                    attitude_hz=None, altitude_hz=None)
+                                    attitude_hz=None, altitude_hz=None, sitl_confirmed=None)
             self._set_status('Telemetry stale')
             self.snapshot_changed.emit(self.snapshot)
 
     def _set_status(self, message):
-        self.status_changed.emit(message)
+        self.status_changed.emit('Telemetry stale' if getattr(self, '_app_heartbeat_stale', False) else message)

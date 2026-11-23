@@ -5,7 +5,21 @@ MAVLink telemetry on `udpin:127.0.0.1:14550`. After App sends its first packet,
 View returns its heartbeat and flight commands on that same UDP socket and
 receives command ACKs there. It does not connect to Betaflight SITL. With
 `--image-endpoint`, it subscribes directly to the local renderer camera;
-parameter and recording controls remain unavailable.
+parameter controls remain unavailable. View has no recording controls.
+View interprets App flight-control values with local constants and a local
+readiness enum. The App–View flight link carries MAVLink messages only; it does
+not exchange `bullet_msgs` objects. View owns its flight, parameter, and status
+message interpretation locally. The parameter tab remains disabled because
+the current App has no parameter responder. View no longer depends on
+`bullet_msgs`.
+
+View shows **SITL confirmed** when App's startup MSP board-info query returned
+`SITL`, **SITL not confirmed** when it did not, and **SITL status unknown**
+without a fresh App heartbeat. This reports firmware identity, not whether the
+physics simulator is exchanging data.
+The header shows **Telemetry stale** in red when no App heartbeat arrives for
+three seconds, even if other MAVLink packets continue. A new App heartbeat
+restores the connected status.
 
 ## Run
 
@@ -46,7 +60,11 @@ and exits after the flight. The app reports a fault when SITL telemetry becomes
 stale; restart it before flying again.
 
 The dashboard shows app-relayed attitude and altitude, vertical speed,
-armed state, mission phase, and status messages. Launch with
+armed state, mission phase, and status messages. The visible vertical scrollbar
+belongs to the status message list. **Auto-scroll** is enabled by default and
+keeps new messages at the bottom; turn it off to read earlier messages without
+losing your position, then turn it on to jump to the newest message. In a short
+window, Auto-scroll also brings the message list into view. Launch with
 `--image-endpoint tcp://127.0.0.1:5556` to show the local renderer image.
 For target-hit, Bullet App relays fid-tagged detections over the existing
 MAVLink link; View overlays only boxes matching a displayed image fid.

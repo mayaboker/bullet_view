@@ -1,6 +1,6 @@
 """Immutable telemetry state shared by the presenter and view."""
 from dataclasses import dataclass
-from bullet_msgs.status_messages import parse_status_text, STATUS_TIME_DECIMALS
+from .status_messages import parse_status_text, STATUS_TIME_DECIMALS
 
 
 @dataclass(frozen=True)
@@ -14,6 +14,7 @@ class Attitude:
 @dataclass(frozen=True)
 class Heartbeat:
     base_mode: int
+    custom_mode: int
     system_status: int
     received_at_s: float
 
@@ -87,6 +88,7 @@ class TelemetrySnapshot:
     altitude_hz: float | None = None
     messages: tuple[StatusText, ...] = ()
     heartbeat: Heartbeat | None = None
+    sitl_confirmed: bool | None = None
     mission_stopped: bool = False
     bbox: Bbox | None = None
     image: ImageFrame | None = None

@@ -36,16 +36,21 @@ def test_view_has_telemetry_and_parameters_tabs_and_renders_snapshot(application
         assert window.tabs.count() == 2
         assert window.tabs.tabText(0) == 'Telemetry'
         assert window.tabs.tabText(1) == 'Parameters'
+        assert window.tabs.widget(0) is window.telemetry_scroll
+        assert window.telemetry_scroll.verticalScrollBarPolicy() == QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        assert window.message_log.verticalScrollBarPolicy() == QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+        assert window.auto_scroll.isChecked()
         assert '+17.2°' in window.yaw.text()
         assert window.altitude.altitude_m == 4.
         assert window.vertical_speed.vertical_speed_m_s == 1.25
         assert 'ATTITUDE 49.2 Hz' in window.upstream_rates.text()
         assert 'ALTITUDE 47.8 Hz' in window.upstream_rates.text()
+        assert window.sitl_status.text() == 'SITL status unknown'
         assert window.camera_frame.image is not None
         assert window.camera_frame.bbox == Bbox(True, 0., 0., 1., 1.)
         assert window.image_mode.currentText() == 'Remote'
         assert not window.image_mode.isEnabled()
-        assert not window.recording_panel.isEnabled()
+        assert not hasattr(window, 'recording_panel')
         assert not window.parameter_panel.isEnabled()
         assert not window.reload_profile.isEnabled()
         assert window.roll.parentWidget().objectName() == 'attitude_summary'
@@ -54,6 +59,35 @@ def test_view_has_telemetry_and_parameters_tabs_and_renders_snapshot(application
         assert window.message_log.item(0).text() == '[— s | frame —] ready'
         window.message_log.itemClicked.emit(window.message_log.item(0))
         assert 'waiting for the application to report readiness' in window.message_details.text()
+    finally:
+        window.close()
+
+
+def test_view_shows_sitl_confirmation_states(application):
+    window = MainWindow(FakePresenter())
+    try:
+        for confirmed, expected, rate_source, color in (
+                (None, 'SITL status unknown', 'Telemetry', '#9bb0c8'),
+                (True, 'SITL confirmed', 'SITL', '#ef6b73'),
+                (False, 'SITL not confirmed', 'HW', '#70d6ad')):
+            window.set_snapshot(TelemetrySnapshot(sitl_confirmed=confirmed))
+            assert window.sitl_status.text() == expected
+            assert window.upstream_rates.text().startswith(f'{rate_source} rates')
+            assert color in window.upstream_rates.styleSheet()
+    finally:
+        window.close()
+
+
+def test_view_shows_telemetry_stale_in_red(application):
+    presenter = FakePresenter()
+    window = MainWindow(presenter)
+    try:
+        presenter.status_changed.emit('Telemetry stale')
+        assert window.status.text() == 'Telemetry stale'
+        assert '#ef6b73' in window.status.styleSheet()
+        presenter.status_changed.emit('Connected')
+        assert window.status.text() == 'Connected'
+        assert window.status.styleSheet() == ''
     finally:
         window.close()
 
@@ -117,6 +151,37 @@ def test_auto_scroll_checkbox_preserves_position_and_resumes(application):
         window.close()
 
 
+def test_auto_scroll_exposes_status_messages_in_short_window(application):
+    window = MainWindow(FakePresenter())
+    window.resize(820, 560)
+    window.show()
+    try:
+        application.processEvents()
+        dashboard_bar = window.telemetry_scroll.verticalScrollBar()
+        assert dashboard_bar.maximum() > 0
+        assert not dashboard_bar.isVisible()
+        window.set_snapshot(TelemetrySnapshot(messages=log_messages(100)))
+        application.processEvents()
+        assert dashboard_bar.value() > 0
+        message_bar = window.message_log.verticalScrollBar()
+        assert message_bar.value() == message_bar.maximum()
+
+        window.auto_scroll.setChecked(False)
+        dashboard_bar.setValue(0)
+        message_bar.setValue(0)
+        window.set_snapshot(TelemetrySnapshot(messages=log_messages(110)))
+        application.processEvents()
+        assert dashboard_bar.value() == 0
+        assert message_bar.value() == 0
+
+        window.auto_scroll.setChecked(True)
+        application.processEvents()
+        assert dashboard_bar.value() > 0
+        assert message_bar.value() == message_bar.maximum()
+    finally:
+        window.close()
+
+
 def test_clear_log_discards_presenter_history_details_and_keeps_receiving(application):
     from bullet_view.presenter import Presenter
     from bullet_view.model import TelemetryUpdate
@@ -153,7 +218,7 @@ def test_clear_log_discards_presenter_history_details_and_keeps_receiving(applic
 
 
 def test_view_renders_simulation_time_camera_frame_and_retains_message_code(application):
-    from bullet_msgs.status_messages import status_text_chunks
+    from bullet_view.status_messages import status_text_chunks
     window = MainWindow(FakePresenter())
     try:
         text = status_text_chunks(7,'HOVER: settling',simulation_time_s=27.075,image_sequence=4809)[0]

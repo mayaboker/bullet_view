@@ -1,4 +1,4 @@
-from bullet_view.model import Bbox, StatusText, TelemetryUpdate
+from bullet_view.model import Bbox, Heartbeat, StatusText, TelemetryUpdate
 from bullet_view.presenter import Presenter, VerticalSpeedEstimator
 from bullet_view.worker import MavlinkWorker
 from bullet_view.peer_udp import AppPeerUDP
@@ -8,7 +8,7 @@ import socket
 from threading import Thread
 from time import monotonic, sleep
 from pymavlink import mavutil
-from bullet_msgs.parameters import use_mavlink2
+from bullet_view.mavlink_v2 import use_mavlink2
 
 
 class Message:
@@ -98,12 +98,13 @@ def test_worker_maps_standard_mavlink_messages_to_updates():
     worker.update.connect(updates.append)
     worker._emit_message(Message('ATTITUDE', roll=.1, pitch=.2, yaw=.3, time_boot_ms=4), 1.)
     worker._emit_message(Message('ALTITUDE', altitude_local=5., time_usec=6), 2.)
-    worker._emit_message(Message('HEARTBEAT'), 3.)
+    worker._emit_message(Message('HEARTBEAT', custom_mode=1), 3.)
     worker._emit_message(Message('DISTANCE_SENSOR', current_distance=275, time_boot_ms=7), 4.)
 
     assert [update.kind for update in updates] == ['ATTITUDE', 'ALTITUDE', 'HEARTBEAT', 'DISTANCE_SENSOR']
     assert updates[0].value.roll_rad == .1
     assert updates[1].value.local_m == 5.
+    assert updates[2].value.custom_mode == 1
     assert updates[3].value.distance_cm == 275.
 
 
@@ -147,6 +148,17 @@ def test_worker_accepts_upstream_rates_only_from_app():
     worker._emit_message(RateMessage('ATT_HZ', 20., (9, 9)), 1.)
     assert [(update.kind, update.value) for update in updates] == [
         ('RATE', ('ATT_HZ', 49.5)), ('RATE', ('ALT_HZ', 48.0))]
+
+
+def test_worker_has_no_recording_command_or_state_path():
+    worker = MavlinkWorker('test')
+    assert not hasattr(worker, 'request_recording')
+    assert not hasattr(worker, 'recording')
+    updates = []
+    worker.update.connect(updates.append)
+    for name in ('REC_AUTH', 'REC_STATE'):
+        worker._emit_message(Message('NAMED_VALUE_FLOAT', name=name.encode(), value=1.), 1.)
+    assert updates == []
 
 
 def test_presenter_keeps_upstream_rates_in_snapshot():
@@ -213,6 +225,56 @@ def test_presenter_only_reports_connected_after_a_message():
     assert statuses[-1] == 'Connected'
 
 
+def test_presenter_sitl_confirmation_expires_with_heartbeat():
+    now = [1.]
+    presenter = Presenter('test', clock=lambda: now[0])
+    presenter._on_update(TelemetryUpdate('HEARTBEAT', Heartbeat(0, 1, 3, 1.), 1.))
+    assert presenter.snapshot.sitl_confirmed is True
+    now[0] = 4.1
+    presenter._refresh_freshness()
+    assert presenter.snapshot.sitl_confirmed is None
+    presenter._on_update(TelemetryUpdate('HEARTBEAT', Heartbeat(0, 0, 3, 4.2), 4.2))
+    assert presenter.snapshot.sitl_confirmed is False
+    presenter._on_failure('offline')
+    assert presenter.snapshot.sitl_confirmed is None
+
+
+def test_presenter_reports_stale_app_heartbeat_while_other_packets_continue():
+    now = [1.0]
+    presenter = Presenter('test', clock=lambda: now[0])
+    statuses = []
+    presenter.status_changed.connect(statuses.append)
+    presenter._on_update(TelemetryUpdate('HEARTBEAT', Heartbeat(0, 1, 3, 1.), 1.0))
+    now[0] = 4.1
+    presenter._on_update(TelemetryUpdate('RATE', ('ATT_HZ', 50.0), 4.1))
+    presenter._refresh_freshness()
+    assert presenter.snapshot.connected
+    assert presenter.snapshot.sitl_confirmed is None
+    assert statuses[-1] == 'Telemetry stale'
+    count = len(statuses)
+    presenter._on_update(TelemetryUpdate('RATE', ('ATT_HZ', 50.0), 4.2))
+    presenter._refresh_freshness()
+    assert len(statuses) == count
+    presenter._on_update(TelemetryUpdate('HEARTBEAT', Heartbeat(0, 1, 3, 4.3), 4.3))
+    assert statuses[-1] == 'Connected'
+    assert presenter.snapshot.sitl_confirmed is True
+
+
+def test_presenter_reports_stale_when_no_app_heartbeat_arrives():
+    now = [1.0]
+    presenter = Presenter('test', clock=lambda: now[0])
+    statuses = []
+    presenter.status_changed.connect(statuses.append)
+    now[0] = 4.1
+    presenter._refresh_freshness()
+    assert statuses == ['Telemetry stale']
+    assert not presenter.snapshot.connected
+    presenter._on_update(TelemetryUpdate('RATE', ('ATT_HZ', 50.0), 4.1))
+    presenter._refresh_freshness()
+    assert statuses[-1] == 'Telemetry stale'
+    assert presenter.snapshot.connected
+
+
 def test_presenter_retains_status_messages_in_snapshot():
     presenter = Presenter('test')
     presenter._on_update(TelemetryUpdate('STATUSTEXT', StatusText(2, 4, '[02] warning', 1.), 1.))
@@ -229,7 +291,7 @@ def test_vertical_speed_estimator_filters_altitude_rate_and_resets_after_gap():
 
 
 def test_worker_parses_remote_status_context_without_arrival_time_substitution():
-    from bullet_msgs.status_messages import status_text_chunks
+    from bullet_view.status_messages import status_text_chunks
     worker = MavlinkWorker('test')
     updates = []
     worker.update.connect(updates.append)
