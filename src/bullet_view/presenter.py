@@ -9,7 +9,9 @@ from .model import TelemetrySnapshot
 from .parameters import ParameterSnapshot, save_yaml
 from .worker import MavlinkWorker
 from .image_stream import ImageWorker, FrameMatcher
-from .flight_control import FlightSnapshot, flight_action_block_reason
+from .flight_control import FlightSnapshot, flight_action_block_reason, app_restart_block_reason
+from .simulation_control import SimulationSnapshot, SimulationWorker, STATE_STALE_S
+from bullet_simulation_protocol.state import DEFAULT_CONTROL_ENDPOINT, DEFAULT_STATE_ENDPOINT
 
 
 STALE_AFTER_S = .75
@@ -59,9 +61,15 @@ class Presenter(QtCore.QObject):
     messages_cleared = QtCore.Signal()
     parameters_changed = QtCore.Signal(object)
     flight_changed = QtCore.Signal(object)
+    simulation_changed = QtCore.Signal(object)
+    simulation_result = QtCore.Signal(str, str, str)
+    app_restart_result = QtCore.Signal(str, str)
 
     def __init__(self, endpoint, *, image_mode='remote', image_endpoint=None,
                  worker_factory=MavlinkWorker, image_worker_factory=ImageWorker,
+                 simulation_control_endpoint=DEFAULT_CONTROL_ENDPOINT,
+                 simulation_state_endpoint=DEFAULT_STATE_ENDPOINT,
+                 simulation_worker_factory=SimulationWorker,
                  clock=time.monotonic):
         super().__init__()
         self.endpoint = endpoint
@@ -83,7 +91,20 @@ class Presenter(QtCore.QObject):
         self.snapshot = TelemetrySnapshot()
         self.parameter_snapshot = ParameterSnapshot()
         self.flight_snapshot = FlightSnapshot()
+        self.simulation_snapshot = SimulationSnapshot()
+        self._simulation_received_at_s = None
+        self.simulation_thread = QtCore.QThread(self)
+        self.simulation_worker = simulation_worker_factory(simulation_control_endpoint,
+                                                            simulation_state_endpoint)
+        self.simulation_worker.moveToThread(self.simulation_thread)
+        self.simulation_thread.started.connect(self.simulation_worker.run)
+        self.simulation_worker.observed.connect(self._on_simulation_state)
+        self.simulation_worker.result.connect(self._on_simulation_result)
+        self.simulation_worker.failed.connect(self._on_simulation_failure)
+        self.simulation_worker.finished.connect(self.simulation_thread.quit)
+        self.simulation_thread.finished.connect(self.simulation_worker.deleteLater)
         self._queued_flight_action = None
+        self._app_restart_requested = False
         self._export_destination = None
         self._export_sync_started = False
         self.vertical_speed = VerticalSpeedEstimator()
@@ -110,6 +131,7 @@ class Presenter(QtCore.QObject):
     def start(self):
         self._heartbeat_wait_started_s = self.clock()
         self.thread.start()
+        self.simulation_thread.start()
         if self.image_thread is not None:
             self.image_thread.start()
         self.timer.start()
@@ -117,11 +139,15 @@ class Presenter(QtCore.QObject):
     def stop(self):
         self.timer.stop()
         self.worker.request_stop()
+        self.simulation_worker.request_stop()
         if self.image_worker is not None:
             self.image_worker.request_stop()
         if self.thread.isRunning():
             self.thread.quit()
             self.thread.wait(2000)
+        if self.simulation_thread.isRunning():
+            self.simulation_thread.quit()
+            self.simulation_thread.wait(2000)
         if self.image_thread is not None and self.image_thread.isRunning():
             self.image_thread.quit()
             self.image_thread.wait(2000)
@@ -169,6 +195,12 @@ class Presenter(QtCore.QObject):
                 result=f'{self._queued_flight_action}: request queued; waiting for remote confirmation')
         self.flight_snapshot = snapshot
         self.flight_changed.emit(snapshot)
+        if (getattr(self, '_app_restart_requested', False) and snapshot.pending is None and
+                self._queued_flight_action is None):
+            self._app_restart_requested = False
+            self.app_restart_result.emit(
+                'success' if snapshot.result == 'restart: App ready and disarmed' else 'failure',
+                snapshot.result)
 
     @QtCore.Slot(str, object)
     def _on_flight_request_handled(self, action, snapshot):
@@ -190,7 +222,63 @@ class Presenter(QtCore.QObject):
                                result=f'{action}: request queued; waiting for remote confirmation'))
         if self.worker.request_flight(action, value) is False:
             self._queued_flight_action = previous_queued
+            if action == 'restart':
+                self._app_restart_requested = False
             self._on_flight(previous)
+            return False
+        return True
+
+    def request_app_restart(self):
+        simulation = self.simulation_snapshot
+        if (not simulation.fresh or simulation.pending is not None or
+                simulation.state is None or simulation.state.state != 'stopped_ready'):
+            return False
+        reason = app_restart_block_reason(self.flight_snapshot, self.clock())
+        if reason is not None:
+            self._set_status(reason)
+            return False
+        self._app_restart_requested = True
+        return self.request_flight('restart')
+
+    def request_simulation(self, action):
+        allowed = {'running': ('stop',), 'stopped_reset_required': ('reset',),
+                   'stopped_ready': ('start', 'reset'), 'error': ('reset',)}
+        snapshot = self.simulation_snapshot
+        state = snapshot.state.state if snapshot.state else None
+        if not snapshot.fresh or snapshot.pending is not None or action not in allowed.get(state, ()):
+            return False
+        self.simulation_snapshot = replace(snapshot, pending=action)
+        self.simulation_changed.emit(self.simulation_snapshot)
+        if not self.simulation_worker.request(action):
+            self.simulation_snapshot = replace(snapshot, pending=None)
+            self.simulation_changed.emit(self.simulation_snapshot)
+            return False
+        return True
+
+    @QtCore.Slot(object, float)
+    def _on_simulation_state(self, state, received_at_s):
+        current = self.simulation_snapshot.state
+        if current is not None and current.session_id == state.session_id and state.revision < current.revision:
+            return
+        self._simulation_received_at_s = received_at_s
+        self.simulation_snapshot = replace(self.simulation_snapshot, state=state, fresh=True)
+        self.simulation_changed.emit(self.simulation_snapshot)
+
+    @QtCore.Slot(str, str, str)
+    def _on_simulation_result(self, action, outcome, reason):
+        if self.simulation_snapshot.pending == action:
+            # Wait for a new publication before allowing another action.
+            self.simulation_snapshot = replace(self.simulation_snapshot, pending=None, fresh=False)
+            self.simulation_changed.emit(self.simulation_snapshot)
+        self.simulation_result.emit(action, outcome, reason)
+
+    @QtCore.Slot(str)
+    def _on_simulation_failure(self, reason):
+        pending = self.simulation_snapshot.pending
+        self.simulation_snapshot = replace(self.simulation_snapshot, pending=None, fresh=False)
+        self.simulation_changed.emit(self.simulation_snapshot)
+        if pending is not None:
+            self.simulation_result.emit(pending, 'failure', reason)
 
     def apply_parameter(self, id, value):
         self.worker.set_parameter(id, value)
@@ -268,6 +356,10 @@ class Presenter(QtCore.QObject):
 
     def _refresh_freshness(self):
         now = self.clock()
+        if (self.simulation_snapshot.fresh and self._simulation_received_at_s is not None
+                and now - self._simulation_received_at_s > STATE_STALE_S):
+            self.simulation_snapshot = replace(self.simulation_snapshot, fresh=False)
+            self.simulation_changed.emit(self.simulation_snapshot)
         heartbeat_reference = (self.snapshot.heartbeat_at_s if self.snapshot.heartbeat_at_s is not None
                                else self._heartbeat_wait_started_s)
         if self.snapshot.error is None and now - heartbeat_reference > HEARTBEAT_STALE_S:

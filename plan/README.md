@@ -42,3 +42,5 @@
 - [0030: App module reference](0030-app-module-reference.md) — Update the integration guide after the App runtime module rename; Implemented and verified; commit Pending (no commit requested).
 - [0031: Red App heartbeat stale status](0031-red-app-heartbeat-stale.md) — Show a red stale status when Bullet App heartbeats time out; Implemented, 90 tests passed and 1 skipped; commit Pending (no commit requested).
 - [0032: Status-message-only scrolling](0032-status-message-only-scroll.md) — Show the scrollbar on status messages and keep Auto-scroll following new entries; Implemented, 91 tests passed and 1 skipped; commit Pending (no commit requested).
+- [0033: Simulation controls](0033-simulation-controls.md) — Add synchronized launcher Start, Stop, and Reset controls; Pending; commit Pending.
+- [0034: Restart Bullet App](0034-app-restart.md) — Restart a manual SITL flight session through MAVLink after simulator reset; Implemented, 97 View tests passed with one skip; commit Pending.

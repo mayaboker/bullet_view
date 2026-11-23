@@ -23,7 +23,7 @@ def application():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
-def test_view_has_telemetry_and_parameters_tabs_and_renders_snapshot(application):
+def test_view_has_telemetry_parameters_and_simulation_tabs_and_renders_snapshot(application):
     presenter = FakePresenter()
     window = MainWindow(presenter)
     try:
@@ -33,9 +33,10 @@ def test_view_has_telemetry_and_parameters_tabs_and_renders_snapshot(application
                                      bbox=Bbox(True, 0., 0., 1., 1.),
                                      messages=(StatusText(1, 6, '[01] ready', 1.),))
         window.set_snapshot(snapshot)
-        assert window.tabs.count() == 2
+        assert window.tabs.count() == 3
         assert window.tabs.tabText(0) == 'Telemetry'
         assert window.tabs.tabText(1) == 'Parameters'
+        assert window.tabs.tabText(2) == 'Simulation'
         assert window.tabs.widget(0) is window.telemetry_scroll
         assert window.telemetry_scroll.verticalScrollBarPolicy() == QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         assert window.message_log.verticalScrollBarPolicy() == QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOn

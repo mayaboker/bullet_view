@@ -1,5 +1,7 @@
 # Bullet View
 
+## Overview
+
 Bullet View is the local flight dashboard for Bullet App. It receives app-owned
 MAVLink telemetry on `udpin:127.0.0.1:14550`. After App sends its first packet,
 View returns its heartbeat and flight commands on that same UDP socket and
@@ -21,7 +23,30 @@ The header shows **Telemetry stale** in red when no App heartbeat arrives for
 three seconds, even if other MAVLink packets continue. A new App heartbeat
 restores the connected status.
 
-## Run
+## Features
+
+- MAVLink telemetry and mission controls for Bullet App.
+- Optional local camera with matched target bounding boxes.
+- A Simulation tab that uses direct ZeroMQ commands and the launcher's state feed.
+
+## Architecture
+
+The presenter coordinates immutable telemetry and simulation snapshots. MAVLink,
+image, and simulation workers own their connections outside the GUI thread.
+The Simulation tab subscribes to the launcher's state topic for button
+availability; command replies determine the result dialogs.
+
+## Requirements
+
+Python 3.12 or newer, uv, and a desktop supported by PySide6 are required.
+The launcher and Bullet App are separate processes for a complete flight stack.
+
+## Installation
+
+From this checkout, install the locked development environment with
+`uv sync --locked --group dev`.
+
+## Quick Start
 
 Start the Bullet Drone SITL launcher, then `bullet-app --mode auto` or
 `bullet-app --mode manual`. Open **bullet_view: Bullet: Run view** from the
@@ -29,7 +54,7 @@ multi-root workspace's VS Code tasks, or run:
 
 ```sh
 cd /home/user/projects/bullet_view
-uv sync --group dev
+uv sync --locked --group dev
 uv run --locked bullet-view
 ```
 
@@ -39,7 +64,9 @@ change mode during a flight.
 The App–View MAVLink messages, commands, and port layout are documented in
 [App–View MAVLink communication](docs/app-view-mavlink.md).
 
-## Flight controls
+## Usage
+
+### Flight controls
 
 - **Manual approval:** Wait for the app's disarmed ready state, click **Arm**,
   then **Start hover mission** or **Start target mission**. The selected
@@ -69,7 +96,22 @@ window, Auto-scroll also brings the message list into view. Launch with
 For target-hit, Bullet App relays fid-tagged detections over the existing
 MAVLink link; View overlays only boxes matching a displayed image fid.
 
-## Desktop launcher
+### Simulation controls
+
+The **Simulation** tab shows the launcher's current state and enables Start,
+Stop, and Reset only while the state feed is fresh. Its command endpoint defaults
+to `tcp://127.0.0.1:5561`; state arrives on `simulation/drone_1/state` from
+`tcp://127.0.0.1:5555`. Stop requires Reset before Start. Reset restarts the
+launcher's physics, sensors and Betaflight SITL, then leaves the simulation
+stopped. Press **Restart Bullet App** after a successful Reset, then **Start simulation**
+and use the flight controls for the next mission. Success and failure appear in
+modal dialogs. App restart uses MAVLink command `31013`, waits for a final ACK,
+a new `APP_EPOCH`, fresh disarmed readiness, and times out after 45 seconds. A
+timeout reports an unknown outcome; View does not retry.
+No controls are available while the state feed is stale or absent. The state
+feed requires the launcher renderer telemetry publisher.
+
+### Desktop launcher
 
 The installed wheel includes a desktop launcher and icon. Register or remove
 the launcher with:
@@ -79,5 +121,48 @@ bullet-view --install-launcher
 bullet-view --uninstall-launcher
 ```
 
+## Configuration
+
+`--simulation-control-endpoint` changes the loopback command REQ destination;
+`--simulation-state-endpoint` changes the loopback state SUB destination. Set
+the matching launcher command endpoint when overriding the default. The local
+camera uses `--image-endpoint`; App telemetry uses `--mavlink-endpoint`.
+
+## Project Structure
+
+`src/bullet_view/` contains the UI, presenter, models and I/O workers;
+`tests/` contains headless protocol and offscreen widget tests; `plan/` records
+implementation plans.
+
+## Development
+
+Use uv for dependency and lockfile changes. Keep network I/O out of widgets.
+
+## Testing
+
 Run tests without a display using `QT_QPA_PLATFORM=offscreen uv run --locked
-pytest -q`.
+python -m pytest -q`.
+
+## Documentation
+
+See [App–View MAVLink communication](docs/app-view-mavlink.md) for the flight
+protocol and the [Bullet Drone launcher control design](../bullet_drone/docs/design/launcher-simulation-control.md)
+for simulation requests and state.
+
+## Troubleshooting
+
+If the Simulation tab reports stale state, check that the launcher is running
+with rendering enabled and that View's state endpoint matches the renderer
+telemetry endpoint. After Reset, restart Bullet App before another mission.
+
+## Roadmap
+
+No roadmap is specified here.
+
+## Contributing
+
+Follow [AGENTS.md](AGENTS.md) for project conventions.
+
+## License
+
+No license is specified in this repository.

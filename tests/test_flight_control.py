@@ -33,6 +33,41 @@ def client():
     return c, mav, outputs, sent
 
 
+def test_restart_requires_final_ack_new_epoch_and_disarmed_readback():
+    c, mav, _, sent = client()
+    state(c, 1.)
+    c.named(packet(value=2.), 'APP_STATE', 1.)
+    c.named(packet(value=7.), 'APP_EPOCH', 1.)
+    c.request('restart', None, mav, 1.1)
+    assert sent[-1] == (1, 1, APP_RESTART_COMMAND, 0, 0., 0., 0., 0., 0., 0., 0.)
+    progress = packet(command=APP_RESTART_COMMAND, result=5, result_param2=0,
+                      target_system=255, target_component=190)
+    c.ack(progress, 1.2)
+    c.named(packet(value=1.), 'APP_STATE', 1.3)
+    c.named(packet(value=8.), 'APP_EPOCH', 1.3)
+    state(c, 1.3)
+    assert c.pending is not None
+    final = packet(command=APP_RESTART_COMMAND, result=0, result_param2=0,
+                   target_system=255, target_component=190)
+    c.ack(final, 1.4)
+    assert c.pending is None and c.result == 'restart: App ready and disarmed'
+
+
+def test_restart_rejects_stale_status_armed_and_times_out():
+    c, mav, _, _ = client()
+    state(c, 1., armed=True)
+    c.named(packet(value=2.), 'APP_STATE', 1.)
+    with pytest.raises(ValueError, match='Disarm'):
+        c.request('restart', None, mav, 1.1)
+    state(c, 1.2)
+    with pytest.raises(ValueError, match='stale'):
+        c.request('restart', None, mav, 2.1)
+    c.named(packet(value=2.), 'APP_STATE', 2.2)
+    c.request('restart', None, mav, 2.2)
+    c.poll(2.2 + RESTART_TIMEOUT_S + .01)
+    assert c.pending is None and 'timeout' in c.result
+
+
 def test_height_is_set_by_mission_profile():
     c, mav, outputs, sent = client()
     assert c.remote.height_m is None
