@@ -33,7 +33,7 @@ def client():
     return c, mav, outputs, sent
 
 
-def test_restart_requires_final_ack_new_epoch_and_disarmed_readback():
+def test_restart_completes_from_new_epoch_and_disarmed_readback_without_final_ack():
     c, mav, _, sent = client()
     state(c, 1.)
     c.named(packet(value=2.), 'APP_STATE', 1.)
@@ -46,14 +46,10 @@ def test_restart_requires_final_ack_new_epoch_and_disarmed_readback():
     c.named(packet(value=1.), 'APP_STATE', 1.3)
     c.named(packet(value=8.), 'APP_EPOCH', 1.3)
     state(c, 1.3)
-    assert c.pending is not None
-    final = packet(command=APP_RESTART_COMMAND, result=0, result_param2=0,
-                   target_system=255, target_component=190)
-    c.ack(final, 1.4)
     assert c.pending is None and c.result == 'restart: App ready and disarmed'
 
 
-def test_restart_rejects_stale_status_armed_and_times_out():
+def test_restart_rejects_stale_status_and_armed_then_waits_for_reconnect():
     c, mav, _, _ = client()
     state(c, 1., armed=True)
     c.named(packet(value=2.), 'APP_STATE', 1.)
@@ -64,8 +60,25 @@ def test_restart_rejects_stale_status_armed_and_times_out():
         c.request('restart', None, mav, 2.1)
     c.named(packet(value=2.), 'APP_STATE', 2.2)
     c.request('restart', None, mav, 2.2)
-    c.poll(2.2 + RESTART_TIMEOUT_S + .01)
-    assert c.pending is None and 'timeout' in c.result
+    c.poll(100.)
+    assert c.pending is not None
+    c.named(packet(value=8.), 'APP_EPOCH', 100.1)
+    c.named(packet(value=1.), 'APP_STATE', 100.1)
+    state(c, 100.1, armed=True)
+    assert c.pending is not None
+    state(c, 100.2)
+    assert c.pending is None and c.result == 'restart: App ready and disarmed'
+
+
+def test_restart_failure_ack_ends_pending_request():
+    c, mav, _, _ = client()
+    state(c, 1.)
+    c.named(packet(value=2.), 'APP_STATE', 1.)
+    c.request('restart', None, mav, 1.1)
+    failed = packet(command=APP_RESTART_COMMAND, result=4, result_param2=0,
+                    target_system=255, target_component=190)
+    c.ack(failed, 1.2)
+    assert c.pending is None and 'failed' in c.result
 
 
 def test_height_is_set_by_mission_profile():

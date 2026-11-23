@@ -13,7 +13,6 @@ FORCE_DISARM_MAGIC = 21196
 ACTION_IDS = {'arm': 1, 'disarm': 2, 'emergency': 3, 'start': 4, 'height': 5, 'invalid': 0}
 APP_STATES = {0.: 'disabled', 1.: 'ready', 2.: 'restart_required',
               3.: 'restarting', 4.: 'restart_failed'}
-RESTART_TIMEOUT_S = 45.0
 COMMAND_TIMEOUT_S = 5.0
 STATE_STALE_S = 0.75
 HEIGHT_STEP_M = 0.1

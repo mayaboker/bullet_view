@@ -5,7 +5,7 @@ from .flight_protocol import (FlightState, FLIGHT_NAMES, ARM_DISARM_COMMAND,
     MISSION_START_COMMAND, TAKEOFF_HEIGHT_COMMAND, FORCE_DISARM_MAGIC, COMMAND_TIMEOUT_S,
     STATE_STALE_S, HEIGHT_TOLERANCE_M, MIN_TAKEOFF_HEIGHT_M, MAX_TAKEOFF_HEIGHT_M,
     DISARMED_IDLE, ARMED_IDLE, FLYING, RESET_REQUIRED, ACTION_IDS, Readiness, parse_command)
-from .flight_protocol import APP_RESTART_COMMAND, APP_STATES, RESTART_TIMEOUT_S
+from .flight_protocol import APP_RESTART_COMMAND, APP_STATES
 from .parameters import GCS_SYSTEM_ID, GCS_COMPONENT_ID
 
 APP_TARGET = (1, 1)
@@ -268,7 +268,7 @@ class FlightClient:
     def _complete(self, now):
         p, r = self.pending, self.remote
         if p is not None and p['action'] == 'restart':
-            if (p['ack'] and self.app_epoch is not None and
+            if (self.app_epoch is not None and
                     self.app_epoch != p['previous_epoch'] and self.app_state == 'ready' and
                     0 <= now - self.app_status_at_s <= STATE_STALE_S and
                     r.valid and r.armed is False and r.readiness == DISARMED_IDLE and
@@ -295,9 +295,8 @@ class FlightClient:
         if self.remote.valid and now - self.remote.received_at_s > STATE_STALE_S:
             self.remote = FlightState(target=self.known_target)
             changed = True
-        timeout = (RESTART_TIMEOUT_S if self.pending is not None and
-                   self.pending['action'] == 'restart' else COMMAND_TIMEOUT_S + STATE_STALE_S)
-        if self.pending is not None and now - self.pending['issued'] > timeout:
+        if (self.pending is not None and self.pending['action'] != 'restart' and
+                now - self.pending['issued'] > COMMAND_TIMEOUT_S + STATE_STALE_S):
             self.result = self.pending['action'] + ': timeout; remote outcome unknown'
             self.pending = None
             changed = True

@@ -105,9 +105,10 @@ to `tcp://127.0.0.1:5561`; state arrives on `simulation/drone_1/state` from
 launcher's physics, sensors and Betaflight SITL, then leaves the simulation
 stopped. Press **Restart Bullet App** after a successful Reset, then **Start simulation**
 and use the flight controls for the next mission. Success and failure appear in
-modal dialogs. App restart uses MAVLink command `31013`, waits for a final ACK,
-a new `APP_EPOCH`, fresh disarmed readiness, and times out after 45 seconds. A
-timeout reports an unknown outcome; View does not retry.
+modal dialogs. App restart uses MAVLink command `31013` and completes when a new
+`APP_EPOCH`, fresh `APP_STATE=ready`, and fresh disarmed readiness arrive. The
+request stays pending while App retries its FCU connection; View does not retry
+the command.
 No controls are available while the state feed is stale or absent. The state
 feed requires the launcher renderer telemetry publisher.
 
