@@ -1,0 +1,22 @@
+# Release Log — alice branch (changes from 0.1-alpha)
+
+## bullet_view
+
+1 commit, 3 files changed, +90 / -3 lines.
+
+### New files
+
+- `quick_view.py` (87 lines)
+  Minimal PySide6 image viewer. Subscribes to SHM camera frames via ZMQ,
+  displays them in a window with frame count and fid in the status bar.
+  No bullet_msgs dependency. Useful for quick visual checks of the Isaac
+  or Godot renderer output.
+
+### Modified files
+
+- `pyproject.toml`
+  Fixed bullet-msgs source path from `../../workspaces/bullet/projects/bullet_msgs`
+  to `../bullet_msgs` (sibling project layout).
+
+- `uv.lock`
+  Updated to match the corrected bullet-msgs path.
