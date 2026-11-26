@@ -1,5 +1,8 @@
 """MVP presenter connecting MAVLink updates to the view."""
 from dataclasses import replace
+import os
+import signal as _signal
+import subprocess
 import time
 
 from PySide6 import QtCore
@@ -55,6 +58,83 @@ class VerticalSpeedEstimator:
         return self.filtered_speed_m_s
 
 
+class _AppResetThread(QtCore.QThread):
+    result = QtCore.Signal(str, str)
+
+    def __init__(self, launch_script, mission, current_process, tty_path=None):
+        super().__init__()
+        self.launch_script = launch_script
+        self.mission = mission
+        self.current_process = current_process
+        self.tty_path = tty_path
+        self.new_process = None
+
+    def run(self):
+        self.tty_path = self._find_tty() or self.tty_path
+        try:
+            self._kill_existing()
+        except Exception:
+            pass
+        time.sleep(0.5)
+        tty_fd = None
+        try:
+            if self.tty_path:
+                try:
+                    tty_fd = os.open(self.tty_path, os.O_WRONLY)
+                except OSError:
+                    tty_fd = None
+            kwargs = {}
+            if tty_fd is not None:
+                kwargs['stdout'] = tty_fd
+                kwargs['stderr'] = tty_fd
+            self.new_process = subprocess.Popen(
+                ['bash', self.launch_script, self.mission],
+                start_new_session=True,
+                **kwargs,
+            )
+            self.result.emit('success', 'App process restarted')
+        except Exception as exc:
+            self.result.emit('failure', str(exc))
+        finally:
+            if tty_fd is not None:
+                os.close(tty_fd)
+
+    def _find_tty(self):
+        if self.current_process is not None and self.current_process.poll() is None:
+            try:
+                return os.readlink(f'/proc/{self.current_process.pid}/fd/1')
+            except OSError:
+                pass
+        for pattern in ('bullet-app --mode', 'bash.*run_app_after_sitl'):
+            try:
+                result = subprocess.run(['pgrep', '-f', pattern],
+                                        capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    pid = result.stdout.strip().split('\n')[0]
+                    return os.readlink(f'/proc/{pid}/fd/1')
+            except (OSError, subprocess.TimeoutExpired, IndexError):
+                pass
+        return None
+
+    def _kill_existing(self):
+        if self.current_process is not None and self.current_process.poll() is None:
+            try:
+                os.killpg(os.getpgid(self.current_process.pid), _signal.SIGTERM)
+            except (ProcessLookupError, OSError):
+                pass
+            try:
+                self.current_process.wait(timeout=5)
+                return
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(self.current_process.pid), _signal.SIGKILL)
+                except (ProcessLookupError, OSError):
+                    pass
+                return
+        for pattern in ('bullet-app --mode', 'bash.*run_app_after_sitl'):
+            subprocess.run(['pkill', '-f', pattern], capture_output=True, timeout=5)
+
+
 class Presenter(QtCore.QObject):
     snapshot_changed = QtCore.Signal(object)
     status_changed = QtCore.Signal(str)
@@ -64,15 +144,22 @@ class Presenter(QtCore.QObject):
     simulation_changed = QtCore.Signal(object)
     simulation_result = QtCore.Signal(str, str, str)
     app_restart_result = QtCore.Signal(str, str)
+    app_reset_result = QtCore.Signal(str, str)
 
     def __init__(self, endpoint, *, image_mode='remote', image_endpoint=None,
                  worker_factory=MavlinkWorker, image_worker_factory=ImageWorker,
                  simulation_control_endpoint=DEFAULT_CONTROL_ENDPOINT,
                  simulation_state_endpoint=DEFAULT_STATE_ENDPOINT,
                  simulation_worker_factory=SimulationWorker,
+                 app_launch_script=None, app_mission=None,
                  clock=time.monotonic):
         super().__init__()
         self.endpoint = endpoint
+        self._app_launch_script = app_launch_script
+        self._app_mission = app_mission
+        self._app_process = None
+        self._app_tty_path = None
+        self._app_reset_thread = None
         self.worker_factory = worker_factory
         self.clock = clock
         self._heartbeat_wait_started_s = clock()
@@ -151,6 +238,8 @@ class Presenter(QtCore.QObject):
         if self.image_thread is not None and self.image_thread.isRunning():
             self.image_thread.quit()
             self.image_thread.wait(2000)
+        if self._app_reset_thread is not None and self._app_reset_thread.isRunning():
+            self._app_reset_thread.wait(2000)
 
     def set_image_mode(self, mode):
         if mode != self.image_mode:
@@ -239,6 +328,31 @@ class Presenter(QtCore.QObject):
             return False
         self._app_restart_requested = True
         return self.request_flight('restart')
+
+    @property
+    def app_reset_available(self):
+        return self._app_launch_script is not None and self._app_mission is not None
+
+    def request_app_reset(self):
+        if not self.app_reset_available:
+            return False
+        if self._app_reset_thread is not None and self._app_reset_thread.isRunning():
+            return False
+        self._app_reset_thread = _AppResetThread(
+            self._app_launch_script, self._app_mission, self._app_process,
+            self._app_tty_path)
+        self._app_reset_thread.result.connect(self._on_app_reset_result)
+        self._app_reset_thread.start()
+        return True
+
+    @QtCore.Slot(str, str)
+    def _on_app_reset_result(self, outcome, reason):
+        if self._app_reset_thread is not None:
+            self._app_process = self._app_reset_thread.new_process
+            if self._app_reset_thread.tty_path:
+                self._app_tty_path = self._app_reset_thread.tty_path
+            self._app_reset_thread = None
+        self.app_reset_result.emit(outcome, reason)
 
     def request_simulation(self, action):
         allowed = {'running': ('stop',), 'stopped_reset_required': ('reset',),

@@ -51,12 +51,18 @@ def main(argv=None):
                         help='Launcher simulation command endpoint')
     parser.add_argument('--simulation-state-endpoint', default=DEFAULT_STATE_ENDPOINT,
                         help='Launcher simulation state publisher endpoint')
+    parser.add_argument('--app-launch-script',
+                        help='Path to run_app_after_sitl.sh for the Reset App button')
+    parser.add_argument('--app-mission',
+                        help='Mission argument for the app launch script (hover-land or target-hit)')
     parser.add_argument('--monitor', help='Qt screen name for the Bullet View window')
     parser.add_argument('--monitor-half', choices=('top', 'bottom'),
                         help='Use the top or bottom half of --monitor')
     args = parser.parse_args(argv)
     if args.monitor_half and not args.monitor:
         parser.error('--monitor-half requires --monitor')
+    if bool(args.app_launch_script) != bool(args.app_mission):
+        parser.error('--app-launch-script and --app-mission must be used together')
     for endpoint in (args.simulation_control_endpoint, args.simulation_state_endpoint):
         try:
             validate_endpoint(endpoint)
@@ -72,7 +78,9 @@ def main(argv=None):
     configure_application(application)
     presenter = Presenter(args.mavlink_endpoint, image_endpoint=args.image_endpoint,
                           simulation_control_endpoint=args.simulation_control_endpoint,
-                          simulation_state_endpoint=args.simulation_state_endpoint)
+                          simulation_state_endpoint=args.simulation_state_endpoint,
+                          app_launch_script=args.app_launch_script,
+                          app_mission=args.app_mission)
     window = MainWindow(presenter)
     place_on_monitor(window, application, args.monitor, args.monitor_half)
     window.show()

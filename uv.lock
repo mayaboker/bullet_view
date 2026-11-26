@@ -26,7 +26,7 @@ requires-dist = [{ name = "pyzmq", specifier = ">=27,<28" }]
 
 [[package]]
 name = "bullet-view"
-version = "0.2.0"
+version = "0.25.0"
 source = { editable = "." }
 dependencies = [
     { name = "bullet-image-transport" },

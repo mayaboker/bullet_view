@@ -1,4 +1,34 @@
-# Release Log — alice branch (changes from 0.1-alpha)
+# Release Log — Integration branch
+
+## 0.25-Integration (changes from 0.2-alice)
+
+### New features
+
+- **Reset App button** in the Simulation tab. Kills the running bullet_app
+  process and restarts `run_app_after_sitl.sh`. Discovers the original
+  terminal (pty) via `/proc/<pid>/fd/1` and redirects the restarted process
+  output there. Enabled via `--app-launch-script` and `--app-mission` CLI
+  flags.
+
+### Modified files
+
+- `src/bullet_view/simulation_view.py`
+  Added "Reset App" button to SimulationPanel. Click handler disables the
+  button, calls presenter, and shows success/failure message box on result.
+
+- `src/bullet_view/presenter.py`
+  Added `_AppResetThread` (QThread) for background process kill + restart.
+  Discovers pty from current process or via pgrep fallback. Kills process
+  group with SIGTERM/SIGKILL. Restarts with output redirected to original
+  terminal. Added `request_app_reset()` method and `app_reset_result` signal
+  to Presenter.
+
+- `src/bullet_view/main.py`
+  Added `--app-launch-script` and `--app-mission` CLI args. Passes them to
+  Presenter constructor.
+
+- `pyproject.toml`
+  Version bump 0.2.0 → 0.25.0.
 
 ## 0.2-alice (changes from 0.1-alice)
 
